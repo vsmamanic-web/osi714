@@ -1304,6 +1304,14 @@ function setStatus(msg, color){
     `<span style="color:${color||'var(--muted)'}">${msg}</span>`;
 }
 
+function openFilePicker(e){
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const input = document.getElementById('fileInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
 function excelDateToISO(v){
   // Acepta Date, número serial Excel, o string
   if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
@@ -1425,6 +1433,8 @@ function recomputeDerived(){
 function handleUpload(e){
   const file = e.target.files[0];
   if (!file) return;
+  const nameBox = document.getElementById('selectedFileName');
+  if (nameBox) nameBox.textContent = file.name;
   setStatus(`⏳ Procesando "${file.name}"...`, '#0ea5e9');
 
   const reader = new FileReader();
@@ -1562,6 +1572,8 @@ function handleUpload(e){
     if (!f) return;
     const input = document.getElementById('fileInput');
     const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
+    const nameBox = document.getElementById('selectedFileName');
+    if (nameBox) nameBox.textContent = f.name;
     handleUpload({target: input});
   });
 })();
