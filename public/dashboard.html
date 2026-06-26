@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard Eólico — Sistema Eléctrico Norte-Centro Perú</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #f0f4f8;
@@ -1285,10 +1286,234 @@ function buildAnomalias() {
 }
 
 // ═══════════ UPLOAD ═══════════
-function handleUpload(e) {
-  const file=e.target.files[0];
+function setStatus(msg, color){
+  document.getElementById('uploadStatus').innerHTML =
+    `<span style="color:${color||'var(--muted)'}">${msg}</span>`;
+}
+
+function excelDateToISO(v){
+  // Acepta Date, número serial Excel, o string
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  if (typeof v === 'string') {
+    const t = v.trim();
+    // ISO yyyy-mm-dd
+    let m = t.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    // dd/mm/yyyy o dd-mm-yyyy
+    m = t.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    const d = new Date(t);
+    if (!isNaN(d)) return d.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+function quantile(arr, q){
+  if (!arr.length) return 0;
+  const a = [...arr].sort((x,y)=>x-y);
+  const pos = (a.length-1)*q;
+  const b = Math.floor(pos), r = pos-b;
+  return a[b+1]!==undefined ? a[b]+r*(a[b+1]-a[b]) : a[b];
+}
+
+function recomputeDerived(){
+  const C = D.centrales, N = D.dates.length;
+
+  // Stats
+  D.stats = {};
+  C.forEach(p => {
+    const vals = D.by_plant[p] || new Array(N).fill(0);
+    const pos = vals.filter(v=>v>0);
+    const mean = vals.reduce((a,b)=>a+b,0)/(vals.length||1);
+    const max = vals.length ? Math.max(...vals) : 0;
+    const min = pos.length ? Math.min(...pos) : 0;
+    const variance = vals.reduce((a,b)=>a+(b-mean)**2,0)/(vals.length||1);
+    const std = Math.sqrt(variance);
+    const cv = mean>0 ? (std/mean)*100 : 0;
+    const high = max*0.8, low = max*0.2;
+    D.stats[p] = {
+      mean: +mean.toFixed(1),
+      max: +max.toFixed(1),
+      min: +min.toFixed(1),
+      std: +std.toFixed(2),
+      cv: +cv.toFixed(1),
+      p25: +quantile(vals,0.25).toFixed(1),
+      p75: +quantile(vals,0.75).toFixed(1),
+      high_days: vals.filter(v=>v>=high && high>0).length,
+      low_days: vals.filter(v=>v>0 && v<=low).length
+    };
+  });
+
+  // Anomalies (|z|>2)
+  D.anomalies = {};
+  C.forEach(p => {
+    const s = D.stats[p];
+    const list = [];
+    (D.by_plant[p]||[]).forEach((v,i)=>{
+      if (s.std>0){
+        const z = (v - s.mean)/s.std;
+        if (Math.abs(z) > 2) list.push({date: D.dates[i], val: v, z: +z.toFixed(2)});
+      }
+    });
+    D.anomalies[p] = list;
+  });
+
+  // Monthly & Yearly
+  const monthsSet = new Set(), yearsSet = new Set();
+  D.dates.forEach(d => { monthsSet.add(d.slice(0,7)); yearsSet.add(parseInt(d.slice(0,4))); });
+  const mLabels = [...monthsSet].sort();
+  const yLabels = [...yearsSet].sort();
+  D.monthly = { labels: mLabels, by_plant: {} };
+  D.yearly  = { labels: yLabels, by_plant: {} };
+
+  C.forEach(p => {
+    const mm = mLabels.map(()=>0), yy = yLabels.map(()=>0);
+    (D.by_plant[p]||[]).forEach((v,i)=>{
+      const mi = mLabels.indexOf(D.dates[i].slice(0,7));
+      const yi = yLabels.indexOf(parseInt(D.dates[i].slice(0,4)));
+      if (mi>=0) mm[mi]+=v;
+      if (yi>=0) yy[yi]+=v;
+    });
+    D.monthly.by_plant[p] = mm.map(v=>+v.toFixed(1));
+    D.yearly.by_plant[p]  = yy.map(v=>+v.toFixed(1));
+  });
+
+  // Region monthly
+  D.region_monthly = { NORTE: mLabels.map(()=>0), CENTRO: mLabels.map(()=>0) };
+  C.forEach(p => {
+    const r = D.lugares[p];
+    if (r!=='NORTE' && r!=='CENTRO') return;
+    D.monthly.by_plant[p].forEach((v,mi)=>{ D.region_monthly[r][mi] += v; });
+  });
+
+  // Group daily sums
+  ['G1','G2','G3'].forEach(g=>{
+    const ps = D.grupos[g] || [];
+    D['group_'+g] = D.dates.map((_,i)=>ps.reduce((s,p)=>s+(D.by_plant[p]?.[i]||0),0));
+  });
+
+  // Correlations
+  D.corr = {};
+  C.forEach(p1 => {
+    D.corr[p1] = {};
+    C.forEach(p2 => {
+      D.corr[p1][p2] = +pearson(D.by_plant[p1]||[], D.by_plant[p2]||[]).toFixed(3);
+    });
+  });
+
+  // Years vector
+  D.years = D.dates.map(d=>parseInt(d.slice(0,4)));
+}
+
+function handleUpload(e){
+  const file = e.target.files[0];
   if (!file) return;
-  document.getElementById('uploadStatus').innerHTML=`<span style="color:#0ea5e9">✅ Archivo "${file.name}" cargado. En una implementación completa, el sistema procesaría el Excel y actualizaría todos los gráficos automáticamente. Por ahora los datos actuales siguen activos.</span>`;
+  setStatus(`⏳ Procesando "${file.name}"...`, '#0ea5e9');
+
+  const reader = new FileReader();
+  reader.onerror = ()=> setStatus('❌ Error leyendo el archivo','#ef4444');
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type:'array', cellDates:true });
+
+      // Recolecta filas de todas las hojas (cada hoja = un año)
+      const rowsByDate = new Map(); // ISO date -> { central: val }
+      const plantsFound = new Set();
+      let totalRows = 0;
+
+      wb.SheetNames.forEach(sn => {
+        const ws = wb.Sheets[sn];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+        if (!aoa || aoa.length < 4) return;
+
+        // Detecta fila de encabezado de centrales (la que contenga "Fecha" o columnas conocidas)
+        let headerRow = -1;
+        for (let i=0; i<Math.min(aoa.length, 6); i++){
+          const row = aoa[i] || [];
+          const joined = row.map(x=>String(x||'').toUpperCase()).join('|');
+          if (joined.includes('FECHA') || joined.includes('SAN JUAN') || joined.includes('DUNA') || joined.includes('WAYRA')){
+            headerRow = i; break;
+          }
+        }
+        if (headerRow < 0) headerRow = 2; // fallback: fila 3 según formato esperado
+
+        const header = aoa[headerRow].map(x=>String(x||'').trim());
+        // Columna de fecha
+        let dateCol = header.findIndex(h=>/fecha|date/i.test(h));
+        if (dateCol < 0) dateCol = 0;
+
+        for (let r = headerRow+1; r < aoa.length; r++){
+          const row = aoa[r];
+          if (!row || row.every(c=>c===null||c==='')) continue;
+          const iso = excelDateToISO(row[dateCol]);
+          if (!iso) continue;
+          let bucket = rowsByDate.get(iso);
+          if (!bucket){ bucket = {}; rowsByDate.set(iso, bucket); }
+          for (let c=0; c<header.length; c++){
+            if (c===dateCol) continue;
+            const name = header[c];
+            if (!name) continue;
+            const v = row[c];
+            const num = typeof v==='number' ? v : (v==null||v===''?null:Number(String(v).replace(',','.')));
+            if (num==null || isNaN(num)) continue;
+            bucket[name] = num;
+            plantsFound.add(name);
+          }
+          totalRows++;
+        }
+      });
+
+      if (rowsByDate.size === 0){
+        setStatus('❌ No se encontraron filas de datos válidas. Verifica el formato del archivo.', '#ef4444');
+        return;
+      }
+
+      // Construye D nuevo conservando metadatos de centrales conocidas + añade nuevas
+      const dates = [...rowsByDate.keys()].sort();
+      const knownPlants = D.centrales.slice();
+      const extraPlants = [...plantsFound].filter(p => !knownPlants.includes(p));
+      const allPlants = knownPlants.concat(extraPlants);
+
+      const by_plant = {};
+      allPlants.forEach(p => by_plant[p] = new Array(dates.length).fill(0));
+      dates.forEach((d,i)=>{
+        const bucket = rowsByDate.get(d);
+        allPlants.forEach(p => { if (bucket[p]!=null) by_plant[p][i] = bucket[p]; });
+      });
+
+      // Para nuevas centrales, asigna región/grupo por defecto
+      extraPlants.forEach(p => {
+        if (!D.lugares[p]) D.lugares[p] = 'CENTRO';
+        if (!D.coords[p])  D.coords[p]  = [-12, -77];
+        if (!D.grupos.G3.includes(p) && !D.grupos.G1.includes(p) && !D.grupos.G2.includes(p)){
+          D.grupos.G3.push(p);
+        }
+      });
+
+      D.centrales = allPlants;
+      D.dates = dates;
+      D.by_plant = by_plant;
+      recomputeDerived();
+
+      // Re-sincroniza estado y chips
+      state.selPlants = D.centrales.slice();
+      // Reconstruye chips si la función existe
+      try { initChips(); } catch(_){}
+      rebuildAll();
+
+      setStatus(`✅ "${file.name}" cargado: ${dates.length} días · ${allPlants.length} centrales`
+              + (extraPlants.length?` · ${extraPlants.length} nuevas: ${extraPlants.join(', ')}`:'')
+              + ` (hojas: ${wb.SheetNames.join(', ')})`, '#10b981');
+    } catch(err){
+      console.error(err);
+      setStatus('❌ Error procesando el Excel: '+err.message, '#ef4444');
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // ─── INIT ───
