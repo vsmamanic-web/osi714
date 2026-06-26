@@ -496,12 +496,13 @@ tr:hover td { background:#f8fafc; }
 <div class="page" id="page-upload">
   <div class="card" style="max-width:700px;margin:0 auto">
     <div class="card-head"><div class="card-eyebrow">Actualización de datos</div><div class="card-title">Cargar Nuevos Archivos Excel</div><div class="card-sub">El dashboard se actualizará automáticamente al cargar un archivo con el mismo formato</div></div>
-    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+    <label for="fileInput" class="upload-zone" id="uploadZone" style="display:block">
       <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleUpload(event)">
       <div style="font-size:48px;margin-bottom:12px">📂</div>
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Arrastra tu archivo Excel aquí</div>
-      <div style="font-size:12px;color:var(--muted)">o haz click para seleccionar · Formatos: .xlsx, .xls</div>
-    </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">o haz click para seleccionar · Formatos: .xlsx, .xls</div>
+      <span style="display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:10px 22px;border-radius:8px">Seleccionar archivo</span>
+    </label>
     <div id="uploadStatus" style="margin-top:16px;font-size:12px;color:var(--muted)"></div>
     <div style="margin-top:20px;background:var(--surface2);border-radius:10px;padding:16px">
       <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text)">📋 Formato esperado del archivo:</div>
