@@ -218,19 +218,16 @@ tr:hover td { background:#f8fafc; }
   cursor:pointer; transition:border-color 0.2s; background:var(--surface2);
 }
 .upload-zone:hover { border-color:var(--accent); }
-.upload-zone .native-file-input {
-  display:block; width:100%; max-width:460px; margin:14px auto 0; padding:10px;
-  background:var(--surface); border:1px solid var(--border); border-radius:8px;
-  color:var(--text); font:600 12px var(--font); cursor:pointer;
+.upload-actions { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:14px; }
+.file-pick-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  background:var(--accent); color:#fff; font-weight:800; font-size:13px;
+  padding:11px 24px; border-radius:8px; border:0; cursor:pointer; font-family:var(--font);
+  box-shadow:0 4px 12px rgba(14,165,233,0.25);
 }
-.upload-zone .native-file-input::file-selector-button {
-  margin-right:12px; border:0; border-radius:8px; padding:9px 14px;
-  background:var(--accent); color:#fff; font:700 12px var(--font); cursor:pointer;
-}
-.upload-zone .native-file-input::-webkit-file-upload-button {
-  margin-right:12px; border:0; border-radius:8px; padding:9px 14px;
-  background:var(--accent); color:#fff; font:700 12px var(--font); cursor:pointer;
-}
+.file-pick-btn:hover { background:#0284c7; }
+.file-name { min-height:16px; font-size:11px; color:var(--muted); }
+.native-file-input { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 
 /* SCROLLBAR */
 ::-webkit-scrollbar { width:5px; height:5px; }
@@ -511,7 +508,11 @@ tr:hover td { background:#f8fafc; }
     <div class="upload-zone" id="uploadZone" style="display:block">
       <div style="font-size:48px;margin-bottom:12px">📂</div>
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Arrastra tu archivo Excel aquí</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Usa el selector de abajo o arrastra el archivo · Formatos: .xlsx, .xls</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Usa el botón de abajo o arrastra el archivo · Formatos: .xlsx, .xls</div>
+      <div class="upload-actions">
+        <button type="button" class="file-pick-btn" onclick="openFilePicker(event)">📎 Seleccionar documento</button>
+        <div class="file-name" id="selectedFileName">Ningún documento seleccionado</div>
+      </div>
       <input class="native-file-input" type="file" id="fileInput" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="handleUpload(event)">
     </div>
     <div id="uploadStatus" style="margin-top:16px;font-size:12px;color:var(--muted)"></div>
