@@ -1440,14 +1440,31 @@ function handleUpload(e){
             headerRow = i; break;
           }
         }
-        if (headerRow < 0) headerRow = 2; // fallback: fila 3 según formato esperado
+        if (headerRow < 0) headerRow = 0; // fallback: fila 1
 
         const header = aoa[headerRow].map(x=>String(x||'').trim());
+        // Detectar primera fila de datos (saltar filas tipo "Lugar"/"Tipo")
+        let firstDataRow = headerRow + 1;
+        const lugarMap = {};
+        while (firstDataRow < aoa.length) {
+          const row = aoa[firstDataRow] || [];
+          const first = String(row[0]||'').trim().toLowerCase();
+          if (first === 'lugar') {
+            header.forEach((h,c)=>{ if (c>0 && h && row[c]) lugarMap[h] = String(row[c]).trim().toUpperCase(); });
+            firstDataRow++; continue;
+          }
+          if (first === 'tipo' || first === 'tecnologia' || first === 'tecnología') { firstDataRow++; continue; }
+          // Si la primera celda no es fecha válida, saltar
+          if (excelDateToISO(row[0]) == null && first !== '') { firstDataRow++; continue; }
+          break;
+        }
+        // Aplica lugares detectados al D global
+        Object.entries(lugarMap).forEach(([plant,reg])=>{ D.lugares[plant] = reg; });
         // Columna de fecha
         let dateCol = header.findIndex(h=>/fecha|date/i.test(h));
         if (dateCol < 0) dateCol = 0;
 
-        for (let r = headerRow+1; r < aoa.length; r++){
+        for (let r = firstDataRow; r < aoa.length; r++){
           const row = aoa[r];
           if (!row || row.every(c=>c===null||c==='')) continue;
           const iso = excelDateToISO(row[dateCol]);
@@ -1516,6 +1533,26 @@ function handleUpload(e){
   };
   reader.readAsArrayBuffer(file);
 }
+
+
+// Drag & drop
+(function(){
+  const zone = document.getElementById('uploadZone');
+  if (!zone) return;
+  ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{
+    e.preventDefault(); e.stopPropagation(); zone.style.borderColor='var(--accent)';
+  }));
+  ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{
+    e.preventDefault(); e.stopPropagation(); zone.style.borderColor='';
+  }));
+  zone.addEventListener('drop', e=>{
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    const input = document.getElementById('fileInput');
+    const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
+    handleUpload({target: input});
+  });
+})();
 
 // ─── INIT ───
 buildOverview();
