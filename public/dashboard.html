@@ -218,7 +218,16 @@ tr:hover td { background:#f8fafc; }
   cursor:pointer; transition:border-color 0.2s; background:var(--surface2);
 }
 .upload-zone:hover { border-color:var(--accent); }
-.upload-zone input { display:none; }
+.upload-actions { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:14px; }
+.file-pick-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  background:var(--accent); color:#fff; font-weight:800; font-size:13px;
+  padding:11px 24px; border-radius:8px; border:0; cursor:pointer; font-family:var(--font);
+  box-shadow:0 4px 12px rgba(14,165,233,0.25);
+}
+.file-pick-btn:hover { background:#0284c7; }
+.file-name { min-height:16px; font-size:11px; color:var(--muted); }
+.native-file-input { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 
 /* SCROLLBAR */
 ::-webkit-scrollbar { width:5px; height:5px; }
@@ -367,7 +376,7 @@ tr:hover td { background:#f8fafc; }
 <div class="page" id="page-centrales">
   <div class="grid-full">
     <div class="card">
-      <div class="card-head"><div class="card-eyebrow">Análisis por central</div><div class="card-title">Frecuencia de Variaciones: Altas y Bajas</div><div class="card-sub">Días con potencia alta (>media+σ) y baja (<media-σ)</div></div>
+      <div class="card-head"><div class="card-eyebrow">Análisis por central</div><div class="card-title">Frecuencia de Variaciones: Altas y Bajas</div><div class="card-sub">Días con potencia alta (&gt;media+σ) y baja (&lt;media-σ)</div></div>
       <div class="chart-wrap" style="height:240px"><canvas id="chVariaciones"></canvas></div>
     </div>
   </div>
@@ -496,13 +505,16 @@ tr:hover td { background:#f8fafc; }
 <div class="page" id="page-upload">
   <div class="card" style="max-width:700px;margin:0 auto">
     <div class="card-head"><div class="card-eyebrow">Actualización de datos</div><div class="card-title">Cargar Nuevos Archivos Excel</div><div class="card-sub">El dashboard se actualizará automáticamente al cargar un archivo con el mismo formato</div></div>
-    <label for="fileInput" class="upload-zone" id="uploadZone" style="display:block">
-      <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleUpload(event)">
+    <div class="upload-zone" id="uploadZone" style="display:block">
       <div style="font-size:48px;margin-bottom:12px">📂</div>
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Arrastra tu archivo Excel aquí</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">o haz click para seleccionar · Formatos: .xlsx, .xls</div>
-      <span style="display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:10px 22px;border-radius:8px">Seleccionar archivo</span>
-    </label>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Usa el botón de abajo o arrastra el archivo · Formatos: .xlsx, .xls</div>
+      <div class="upload-actions">
+        <button type="button" class="file-pick-btn" onclick="openFilePicker(event)">📎 Seleccionar documento</button>
+        <div class="file-name" id="selectedFileName">Ningún documento seleccionado</div>
+      </div>
+      <input class="native-file-input" type="file" id="fileInput" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="handleUpload(event)">
+    </div>
     <div id="uploadStatus" style="margin-top:16px;font-size:12px;color:var(--muted)"></div>
     <div style="margin-top:20px;background:var(--surface2);border-radius:10px;padding:16px">
       <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text)">📋 Formato esperado del archivo:</div>
@@ -1292,6 +1304,14 @@ function setStatus(msg, color){
     `<span style="color:${color||'var(--muted)'}">${msg}</span>`;
 }
 
+function openFilePicker(e){
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const input = document.getElementById('fileInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
 function excelDateToISO(v){
   // Acepta Date, número serial Excel, o string
   if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
@@ -1413,6 +1433,8 @@ function recomputeDerived(){
 function handleUpload(e){
   const file = e.target.files[0];
   if (!file) return;
+  const nameBox = document.getElementById('selectedFileName');
+  if (nameBox) nameBox.textContent = file.name;
   setStatus(`⏳ Procesando "${file.name}"...`, '#0ea5e9');
 
   const reader = new FileReader();
@@ -1550,6 +1572,8 @@ function handleUpload(e){
     if (!f) return;
     const input = document.getElementById('fileInput');
     const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
+    const nameBox = document.getElementById('selectedFileName');
+    if (nameBox) nameBox.textContent = f.name;
     handleUpload({target: input});
   });
 })();
