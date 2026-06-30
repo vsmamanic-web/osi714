@@ -14,7 +14,107 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      data_uploads: {
+        Row: {
+          filename: string | null
+          id: string
+          plants_touched: number
+          rows_inserted: number
+          technology: string
+          uploaded_at: string
+        }
+        Insert: {
+          filename?: string | null
+          id?: string
+          plants_touched?: number
+          rows_inserted?: number
+          technology: string
+          uploaded_at?: string
+        }
+        Update: {
+          filename?: string | null
+          id?: string
+          plants_touched?: number
+          rows_inserted?: number
+          technology?: string
+          uploaded_at?: string
+        }
+        Relationships: []
+      }
+      measurements: {
+        Row: {
+          created_at: string
+          date: string
+          id: number
+          mw: number
+          plant_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: number
+          mw: number
+          plant_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: number
+          mw?: number
+          plant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "measurements_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plants: {
+        Row: {
+          code: string
+          company: string | null
+          created_at: string
+          id: string
+          installed_mw: number | null
+          lat: number | null
+          lng: number | null
+          name: string
+          region: string | null
+          status: string | null
+          technology: string
+        }
+        Insert: {
+          code: string
+          company?: string | null
+          created_at?: string
+          id?: string
+          installed_mw?: number | null
+          lat?: number | null
+          lng?: number | null
+          name: string
+          region?: string | null
+          status?: string | null
+          technology: string
+        }
+        Update: {
+          code?: string
+          company?: string | null
+          created_at?: string
+          id?: string
+          installed_mw?: number | null
+          lat?: number | null
+          lng?: number | null
+          name?: string
+          region?: string | null
+          status?: string | null
+          technology?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
