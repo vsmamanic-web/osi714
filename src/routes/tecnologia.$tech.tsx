@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   getMeasurementsByTech,
@@ -8,9 +8,7 @@ import {
   type Technology,
 } from "@/lib/centrales";
 import { useMemo, useState } from "react";
-import {
-  Line,
-} from "react-chartjs-2";
+import { Line } from "react-chartjs-2";
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -28,15 +26,14 @@ ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, 
 const VALID: Technology[] = ["hidro", "eolico", "solar", "termico"];
 
 export const Route = createFileRoute("/tecnologia/$tech")({
-  parseParams: ({ tech }) => {
-    if (!VALID.includes(tech as Technology)) throw notFound();
-    return { tech: tech as Technology };
+  head: ({ params }) => {
+    const t = params.tech as Technology;
+    const label = VALID.includes(t) ? TECH_LABEL[t] : "Tecnología";
+    return { meta: [{ title: `${label} — SEIN BI` }] };
   },
-  head: ({ params }) => ({
-    meta: [{ title: `${TECH_LABEL[params.tech as Technology]} — SEIN BI` }],
-  }),
   component: TechModule,
 });
+
 
 function TechModule() {
   const { tech } = Route.useParams() as { tech: Technology };
