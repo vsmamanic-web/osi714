@@ -39,7 +39,7 @@ export const Route = createFileRoute("/tecnologia/$tech")({
 });
 
 function TechModule() {
-  const { tech } = Route.useParams();
+  const { tech } = Route.useParams() as { tech: Technology };
   const { data: plants = [] } = useQuery({
     queryKey: ["plants", tech],
     queryFn: () => listPlants(tech),
