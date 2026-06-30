@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MapaRouteImport } from './routes/mapa'
 import { Route as ComparadorRouteImport } from './routes/comparador'
+import { Route as CargarRouteImport } from './routes/cargar'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TecnologiaTechRouteImport } from './routes/tecnologia.$tech'
 
@@ -22,6 +23,11 @@ const MapaRoute = MapaRouteImport.update({
 const ComparadorRoute = ComparadorRouteImport.update({
   id: '/comparador',
   path: '/comparador',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CargarRoute = CargarRouteImport.update({
+  id: '/cargar',
+  path: '/cargar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,12 +43,14 @@ const TecnologiaTechRoute = TecnologiaTechRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
@@ -50,20 +58,28 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
+  fullPaths: '/' | '/cargar' | '/comparador' | '/mapa' | '/tecnologia/$tech'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
-  id: '__root__' | '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
+  to: '/' | '/cargar' | '/comparador' | '/mapa' | '/tecnologia/$tech'
+  id:
+    | '__root__'
+    | '/'
+    | '/cargar'
+    | '/comparador'
+    | '/mapa'
+    | '/tecnologia/$tech'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CargarRoute: typeof CargarRoute
   ComparadorRoute: typeof ComparadorRoute
   MapaRoute: typeof MapaRoute
   TecnologiaTechRoute: typeof TecnologiaTechRoute
@@ -85,6 +101,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComparadorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cargar': {
+      id: '/cargar'
+      path: '/cargar'
+      fullPath: '/cargar'
+      preLoaderRoute: typeof CargarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +127,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CargarRoute: CargarRoute,
   ComparadorRoute: ComparadorRoute,
   MapaRoute: MapaRoute,
   TecnologiaTechRoute: TecnologiaTechRoute,
