@@ -9,9 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MapaRouteImport } from './routes/mapa'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TecnologiaTechRouteImport } from './routes/tecnologia.$tech'
 
+const MapaRoute = MapaRouteImport.update({
+  id: '/mapa',
+  path: '/mapa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -25,32 +31,43 @@ const TecnologiaTechRoute = TecnologiaTechRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/tecnologia/$tech'
+  fullPaths: '/' | '/mapa' | '/tecnologia/$tech'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/tecnologia/$tech'
-  id: '__root__' | '/' | '/tecnologia/$tech'
+  to: '/' | '/mapa' | '/tecnologia/$tech'
+  id: '__root__' | '/' | '/mapa' | '/tecnologia/$tech'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MapaRoute: typeof MapaRoute
   TecnologiaTechRoute: typeof TecnologiaTechRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/mapa': {
+      id: '/mapa'
+      path: '/mapa'
+      fullPath: '/mapa'
+      preLoaderRoute: typeof MapaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MapaRoute: MapaRoute,
   TecnologiaTechRoute: TecnologiaTechRoute,
 }
 export const routeTree = rootRouteImport
