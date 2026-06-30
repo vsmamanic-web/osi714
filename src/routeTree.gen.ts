@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MapaRouteImport } from './routes/mapa'
+import { Route as ComparadorRouteImport } from './routes/comparador'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TecnologiaTechRouteImport } from './routes/tecnologia.$tech'
 
 const MapaRoute = MapaRouteImport.update({
   id: '/mapa',
   path: '/mapa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComparadorRoute = ComparadorRouteImport.update({
+  id: '/comparador',
+  path: '/comparador',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -31,30 +37,34 @@ const TecnologiaTechRoute = TecnologiaTechRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/comparador': typeof ComparadorRoute
   '/mapa': typeof MapaRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/mapa' | '/tecnologia/$tech'
+  fullPaths: '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/mapa' | '/tecnologia/$tech'
-  id: '__root__' | '/' | '/mapa' | '/tecnologia/$tech'
+  to: '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
+  id: '__root__' | '/' | '/comparador' | '/mapa' | '/tecnologia/$tech'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ComparadorRoute: typeof ComparadorRoute
   MapaRoute: typeof MapaRoute
   TecnologiaTechRoute: typeof TecnologiaTechRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/mapa'
       fullPath: '/mapa'
       preLoaderRoute: typeof MapaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/comparador': {
+      id: '/comparador'
+      path: '/comparador'
+      fullPath: '/comparador'
+      preLoaderRoute: typeof ComparadorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ComparadorRoute: ComparadorRoute,
   MapaRoute: MapaRoute,
   TecnologiaTechRoute: TecnologiaTechRoute,
 }
