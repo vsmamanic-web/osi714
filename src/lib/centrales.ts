@@ -62,19 +62,22 @@ export async function getMeasurementsByTech(
   tech: Technology,
   from?: string,
   to?: string,
-): Promise<Array<Measurement & { plant: Plant }>> {
+): Promise<Measurement[]> {
+  const plants = await listPlants(tech);
+  if (!plants.length) return [];
+  const ids = plants.map((p) => p.id);
   let q = supabase
     .from("measurements")
-    .select("plant_id,date,mw, plant:plants!inner(id,code,name,technology,company,region,installed_mw,lat,lng,status)")
-    .eq("plant.technology", tech)
+    .select("plant_id,date,mw")
+    .in("plant_id", ids)
     .order("date");
   if (from) q = q.gte("date", from);
   if (to) q = q.lte("date", to);
   const { data, error } = await q;
   if (error) throw error;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []) as any;
+  return (data ?? []) as Measurement[];
 }
+
 
 export async function getLastUpdate(): Promise<{
   technology: string;
