@@ -5,8 +5,10 @@ import {
   Droplets,
   FileSpreadsheet,
   Flame,
+  Globe,
   LayoutDashboard,
   Map as MapIcon,
+  Palette as PaletteIcon,
   Sun,
   Upload,
   Wind,
@@ -23,8 +25,10 @@ const NAV = [
   { to: "/tecnologia/termico", label: "Térmicas", icon: Flame },
   { to: "/mapa", label: "Mapa", icon: MapIcon },
   { to: "/comparador", label: "Comparador multi-año", icon: BarChart3 },
+  { to: "/fuera-sein", label: "Fuera del SEIN", icon: Globe },
   { to: "/reportes", label: "Reportes", icon: Activity },
   { to: "/cargar", label: "Cargar Excel", icon: Upload },
+  { to: "/ajustes", label: "Paleta / Ajustes", icon: PaletteIcon },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
