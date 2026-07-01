@@ -214,7 +214,8 @@ export async function upsertPlants(rows: Array<Partial<Plant> & { code: string }
       if (r[k] != null && r[k] !== "") patch[k] = r[k];
     }
     if (Object.keys(patch).length) {
-      const { error } = await supabase.from("plants").update(patch).eq("code", r.code);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.from("plants").update(patch as any).eq("code", r.code);
       if (error) throw error;
       updated++;
     }
@@ -269,6 +270,7 @@ export async function getPalette(): Promise<Palette> {
 export async function savePalette(palette: Palette): Promise<void> {
   const { error } = await supabase
     .from("user_settings")
-    .upsert({ id: "global", palette: palette as unknown as Record<string, unknown> });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .upsert({ id: "global", palette: palette as any });
   if (error) throw error;
 }
