@@ -85,6 +85,7 @@ export type Database = {
           name: string
           region: string | null
           status: string | null
+          system: string
           technology: string
         }
         Insert: {
@@ -98,6 +99,7 @@ export type Database = {
           name: string
           region?: string | null
           status?: string | null
+          system?: string
           technology: string
         }
         Update: {
@@ -111,7 +113,26 @@ export type Database = {
           name?: string
           region?: string | null
           status?: string | null
+          system?: string
           technology?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          id: string
+          palette: Json
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          palette?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          palette?: Json
+          updated_at?: string
         }
         Relationships: []
       }
