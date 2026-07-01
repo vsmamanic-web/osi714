@@ -125,7 +125,7 @@ function Comparator() {
             <option value="">— Selecciona una central —</option>
             {plants.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} ({p.technology})
+                [{p.code}] {p.name} · {p.technology} · {p.system}
               </option>
             ))}
           </select>
