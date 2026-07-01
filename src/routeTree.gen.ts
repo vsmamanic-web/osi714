@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ReportesRouteImport } from './routes/reportes'
 import { Route as MapaRouteImport } from './routes/mapa'
+import { Route as FueraSeinRouteImport } from './routes/fuera-sein'
 import { Route as ComparadorRouteImport } from './routes/comparador'
 import { Route as CargarRouteImport } from './routes/cargar'
+import { Route as AjustesRouteImport } from './routes/ajustes'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TecnologiaTechRouteImport } from './routes/tecnologia.$tech'
 
@@ -26,6 +28,11 @@ const MapaRoute = MapaRouteImport.update({
   path: '/mapa',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FueraSeinRoute = FueraSeinRouteImport.update({
+  id: '/fuera-sein',
+  path: '/fuera-sein',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ComparadorRoute = ComparadorRouteImport.update({
   id: '/comparador',
   path: '/comparador',
@@ -34,6 +41,11 @@ const ComparadorRoute = ComparadorRouteImport.update({
 const CargarRoute = CargarRouteImport.update({
   id: '/cargar',
   path: '/cargar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AjustesRoute = AjustesRouteImport.update({
+  id: '/ajustes',
+  path: '/ajustes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -49,16 +61,20 @@ const TecnologiaTechRoute = TecnologiaTechRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
   '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
+  '/fuera-sein': typeof FueraSeinRoute
   '/mapa': typeof MapaRoute
   '/reportes': typeof ReportesRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
   '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
+  '/fuera-sein': typeof FueraSeinRoute
   '/mapa': typeof MapaRoute
   '/reportes': typeof ReportesRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
@@ -66,8 +82,10 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
   '/cargar': typeof CargarRoute
   '/comparador': typeof ComparadorRoute
+  '/fuera-sein': typeof FueraSeinRoute
   '/mapa': typeof MapaRoute
   '/reportes': typeof ReportesRoute
   '/tecnologia/$tech': typeof TecnologiaTechRoute
@@ -76,24 +94,30 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ajustes'
     | '/cargar'
     | '/comparador'
+    | '/fuera-sein'
     | '/mapa'
     | '/reportes'
     | '/tecnologia/$tech'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ajustes'
     | '/cargar'
     | '/comparador'
+    | '/fuera-sein'
     | '/mapa'
     | '/reportes'
     | '/tecnologia/$tech'
   id:
     | '__root__'
     | '/'
+    | '/ajustes'
     | '/cargar'
     | '/comparador'
+    | '/fuera-sein'
     | '/mapa'
     | '/reportes'
     | '/tecnologia/$tech'
@@ -101,8 +125,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AjustesRoute: typeof AjustesRoute
   CargarRoute: typeof CargarRoute
   ComparadorRoute: typeof ComparadorRoute
+  FueraSeinRoute: typeof FueraSeinRoute
   MapaRoute: typeof MapaRoute
   ReportesRoute: typeof ReportesRoute
   TecnologiaTechRoute: typeof TecnologiaTechRoute
@@ -124,6 +150,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fuera-sein': {
+      id: '/fuera-sein'
+      path: '/fuera-sein'
+      fullPath: '/fuera-sein'
+      preLoaderRoute: typeof FueraSeinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/comparador': {
       id: '/comparador'
       path: '/comparador'
@@ -136,6 +169,13 @@ declare module '@tanstack/react-router' {
       path: '/cargar'
       fullPath: '/cargar'
       preLoaderRoute: typeof CargarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ajustes': {
+      id: '/ajustes'
+      path: '/ajustes'
+      fullPath: '/ajustes'
+      preLoaderRoute: typeof AjustesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -157,8 +197,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AjustesRoute: AjustesRoute,
   CargarRoute: CargarRoute,
   ComparadorRoute: ComparadorRoute,
+  FueraSeinRoute: FueraSeinRoute,
   MapaRoute: MapaRoute,
   ReportesRoute: ReportesRoute,
   TecnologiaTechRoute: TecnologiaTechRoute,
