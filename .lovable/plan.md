@@ -1,97 +1,73 @@
+# Mejoras al panel eléctrico
 
-# Fase 2 — Ampliación del dashboard SEIN BI
+## 1. Plantillas Excel descargables
 
-## 1. Esquema de base de datos (migración)
+Botón **"Descargar plantilla"** en `/cargar` que genera un `.xlsx` con las columnas exactas y una hoja "Instrucciones". Dos plantillas:
 
-Ajustes a la tabla `plants`:
-- Nueva columna `system` (`SEIN` | `COES` | `AISLADO` | `OTRO`) con default `SEIN`.
-- Se conservan `lat`, `lng`, `code`. `code` pasa a ser `UNIQUE` para poder matchear por código en la carga.
-- Precarga de coordenadas conocidas para las centrales principales del SEIN (hidros y eólicas grandes: Mantaro, Restitución, Charcani, Machupicchu, Cerro del Águila, Wayra, Marcona, Tres Hermanas, Duna, Huambos, etc.). Las que no se encuentren se dejan en `NULL` para que las completes con Excel.
+**Plantilla de MEDICIONES** (para actualizar MW diarios de Hidro/Eólico/Solar/Térmico):
 
-Nueva tabla `user_settings` (fila única, `id = 'global'`) para guardar la paleta de colores activa y otras preferencias visuales de forma persistente en la nube.
+| Columna | Obligatorio | Descripción |
+|---|---|---|
+| `codigo` | **Sí** | Código único de la central (evita duplicados) |
+| `nombre` | Sí (primera vez) | Nombre; ignorado si el código ya existe |
+| `fecha` | **Sí** | Formato `YYYY-MM-DD` o fecha Excel |
+| `mw` | **Sí** | Potencia diaria en MW (numérico) |
 
-## 2. Cargadores en `/cargar`
+Regla anti-duplicados: el matching es **por `codigo`** (no por nombre). Si el código existe → actualiza mediciones. Si no existe → crea nueva central con la tecnología del formulario. Nombres distintos con el mismo código NO crean central nueva.
 
-Tres bloques en tabs:
+**Plantilla de CENTRALES (maestro)** — columnas: `codigo, nombre, tecnologia, sistema, empresa, region, potencia_instalada_mw, lat, lng`.
 
-**a) Mediciones diarias** (el que ya existe, mejorado)
-- El Excel de generación debe traer columna nueva **`Código`** además de `Central`.
-- Matching por `code` primero; si no existe, se crea con ese código y su nombre.
-- Se ignoran filas de metadatos (Lugar/Tipo/σ) como ya hoy.
+Hoja "Instrucciones" con: orden, campos obligatorios, ejemplos, valores válidos (`hidro|eolico|solar|termico|otro`, `SEIN|COES|AISLADO|OTRO`).
 
-**b) Coordenadas de centrales**
-- Excel con columnas: `Código`, `Nombre`, `Lat`, `Lng`, `Región`, `Sistema` (SEIN/COES/AISLADO/OTRO), `Empresa`, `Potencia_MW`.
-- Update por código; crea las que falten.
+## 2. Botón "Deshacer última carga"
 
-**c) Estado del maestro**
-- Tabla con todas las centrales cargadas, su código, sistema, si tienen o no coordenadas, y contador de mediciones. Sirve para auditar qué falta.
+En `/cargar`, tabla de últimas subidas con botón **Revertir** por fila. Al pulsar:
+- Borra las `measurements` insertadas en esa carga (rango `[uploaded_at - 5min, uploaded_at + 5min]` por plantas tocadas), y
+- Marca la entrada como revertida en `data_uploads`.
 
-## 3. Nuevas gráficas por módulo de tecnología (`/tecnologia/$tech`)
+Para hacerlo confiable, se añade columna `measurements.upload_id` (FK a `data_uploads.id`) y se registra en cada inserción. Revertir = `DELETE FROM measurements WHERE upload_id = ?`. Los datos previos quedan intactos.
 
-Todo dentro del módulo SEIN/COES (los "fuera" tienen su propia página, ver §5).
+## 3. Selector de año + granularidad (D/S/M) en TODOS los módulos
 
-- **Curva de duración** — MW ordenados de mayor a menor, con líneas de percentil P10/P50/P90.
-- **Heatmap mes × año** — matriz de calor con energía mensual promedio (color = MW promedio).
-- **Barras apiladas por central** — participación % mensual de las top 10 centrales.
-- **Promedio móvil 7d / 30d con banda min–máx** — línea suavizada + banda histórica sombreada.
-- **Anomalías** — detecta días fuera de ±2σ de la media móvil de 30 días. Muestra:
-  - Tabla de fechas anómalas con MW, desvío y día de la semana.
-  - Barras "frecuencia por día de la semana" (dónde caen más anomalías).
-  - Barras "frecuencia por mes".
+Barra de filtros compartida (componente `ChartControls`) en Hidro/Eólico/Solar/Térmico/Fuera-SEIN:
+- Multi-select de años (chips activables, todos por defecto)
+- Toggle de granularidad: **Diario · Semanal · Mensual**
 
-Se agrega selector "vista compacta / detallada" para no saturar en móvil.
+Todos los gráficos de la sección (evolución, curva de duración, heatmap, participación, anomalías) respetan estos filtros. Se corrige el bug actual donde solo se ve un año.
 
-## 4. Mapa (`/mapa`)
+## 4. Comparador — nuevo gráfico multi-central
 
-- Marcadores usan `lat/lng` reales cuando existen; los que no, siguen con el jitter por región (marcados con borde punteado para saber que son aproximados).
-- Filtros por: tecnología, sistema (SEIN/COES/AISLADO/OTRO), región.
-- Popup enriquecido: código, sistema, potencia, empresa, MW promedio último mes, link al detalle de la central.
-- Leyenda de tipos y de "coord real vs aproximada".
+Se mantiene el gráfico actual (una central, varios años superpuestos día del año).
 
-## 5. Nueva página `/fuera-sein`
+**Nuevo bloque**: "Promedio de varias centrales vs años"
+- Multi-select de centrales (chips: `Central 1 ×`, `Central 2 ×`, …)
+- Multi-select de años
+- Toggle Diario · Semanal · Mensual
+- Series: una línea por año, cada valor = **promedio de MW** de las centrales seleccionadas en ese día/semana/mes del año
+- Si una central no tiene dato en una fecha, se promedia solo con las que sí tienen y se muestra un aviso: "Central X sin datos completos en 2024 (faltan N días); el promedio usa solo las centrales con datos."
+- Tooltip: promedio + n° de centrales aportantes
+- Tabla resumen: Δ absoluta y Δ % entre años
 
-- Lista de todas las centrales con `system` distinto de SEIN/COES.
-- KPIs agregados por tipo de tecnología (nº de centrales, potencia instalada total, MW promedio).
-- Un gráfico por tecnología: generación diaria agregada (line) y top centrales (bar).
-- Sin desglose profundo — es el "análisis rápido" que pediste.
+## 5. Paleta Osinergmin llamativa
 
-## 6. Comparador multi-año (`/comparador`)
+Se añade preset **"Osinergmin Vivo"** como default:
+- Hidro: `#0090D4` (azul Osinergmin)
+- Eólico: `#00B140` (verde vivo)
+- Solar: `#FFC20E` (amarillo)
+- Térmico: `#E4002B` (rojo)
+- Otro: `#6C2C91` (violeta institucional)
+- Accent: `#00B7C7` (cian)
 
-Sin cambios funcionales; solo se agrega un toggle "incluir centrales fuera del SEIN" para que la búsqueda de central alcance a ambos universos.
+Sigue siendo cambiable en `/ajustes`.
 
-## 7. Paleta de colores personalizable
+## Cambios técnicos (resumen)
 
-- Nueva página `/ajustes` con:
-  - Presets predefinidos: **Osinergmin (actual azul/verde)**, **Corporativo oscuro**, **Alto contraste**, **Cálido**.
-  - Editor manual: color para cada tecnología (hidro/eólico/solar/térmico), color de acento, color de fondo (claro/oscuro).
-  - Preview en vivo.
-- La paleta se guarda en `user_settings` (persistente en la nube) y se aplica vía CSS variables en el AppShell.
-- Todos los módulos (KPIs, gráficas, mapa, sidebar) leen los colores del contexto de tema, no de constantes hardcodeadas.
+- **Migración SQL**: añadir `measurements.upload_id uuid REFERENCES data_uploads(id) ON DELETE CASCADE`, índice por `upload_id`, columna `data_uploads.reverted_at`.
+- `src/lib/centrales.ts`: aceptar/guardar `upload_id`, función `revertUpload(id)`, funciones para generar plantillas con `xlsx`.
+- Nuevo `src/components/ChartControls.tsx` (años + granularidad) + helper `aggregate(meas, granularity)`.
+- `src/routes/tecnologia.$tech.tsx`, `fuera-sein.tsx`: integrar controles.
+- `src/routes/comparador.tsx`: añadir bloque multi-central + toggle granularidad al gráfico existente.
+- `src/routes/cargar.tsx`: botones "Descargar plantilla mediciones", "Descargar plantilla centrales", tabla de cargas con "Revertir".
+- `src/lib/theme.tsx`: nuevo preset Osinergmin como default.
 
-## 8. Estructura técnica
-
-- Refactor de `src/lib/centrales.ts`: nuevo tipo `System`, funciones `upsertPlantsFromExcel`, `listPlants({tech, system})`, `getUserSettings`, `saveUserSettings`.
-- Nuevo `src/lib/theme.tsx` con `ThemeProvider` que expone la paleta activa y helpers `useTechColor(tech)`.
-- Nuevos gráficos como componentes reutilizables en `src/components/charts/` (`DurationCurve`, `MonthYearHeatmap`, `StackedShare`, `MovingAverageBand`, `AnomalyPanel`).
-- Nueva ruta `src/routes/fuera-sein.tsx` y `src/routes/ajustes.tsx`.
-- Sidebar (`AppShell`) gana entradas: "Fuera del SEIN" y "Ajustes / Paleta".
-
-## Orden de entrega (una sola tanda)
-
-1. Migración (schema + user_settings + precarga de coordenadas conocidas).
-2. Refactor de tipos y capa de datos.
-3. `ThemeProvider` + página `/ajustes`.
-4. Cargadores nuevos en `/cargar` (mediciones con código + coordenadas + estado del maestro).
-5. Gráficas nuevas en `/tecnologia/$tech`.
-6. Mapa con filtros y coord real vs aproximada.
-7. Página `/fuera-sein`.
-8. Actualización del sidebar y del comparador.
-
-## Preguntas cerradas (no vuelvo a preguntar)
-
-- Coordenadas: precargo lo público que encuentre + cargador de Excel para lo que falte.
-- El Excel de mediciones tendrá columna nueva `Código`; matching por código.
-- Sistema (SEIN/COES/AISLADO/OTRO) es un campo editable por central, visible en el maestro.
-- Gráficas: curva de duración, heatmap, barras apiladas, banda móvil, y panel de anomalías (con día de la semana y mes).
-
-¿Apruebas para empezar?
+¿Procedo con la implementación?
