@@ -2,9 +2,11 @@
 // Panel interno sin auth — políticas permisivas intencionales.
 
 import { supabase } from "@/integrations/supabase/client";
+import * as XLSX from "xlsx";
 
 export type Technology = "hidro" | "eolico" | "solar" | "termico" | "otro";
 export type System = "SEIN" | "COES" | "AISLADO" | "OTRO";
+export type Granularity = "day" | "week" | "month";
 
 export interface Plant {
   id: string;
@@ -26,6 +28,16 @@ export interface Measurement {
   mw: number;
 }
 
+export interface UploadRow {
+  id: string;
+  technology: string;
+  filename: string | null;
+  rows_inserted: number;
+  plants_touched: number;
+  uploaded_at: string;
+  reverted_at: string | null;
+}
+
 export const TECH_LABEL: Record<Technology, string> = {
   hidro: "Hidroeléctrica",
   eolico: "Eólica",
@@ -34,15 +46,15 @@ export const TECH_LABEL: Record<Technology, string> = {
   otro: "Otro",
 };
 
+// Paleta Osinergmin Vivo por defecto.
 export const DEFAULT_TECH_COLOR: Record<Technology, string> = {
-  hidro: "#0ea5e9",
-  eolico: "#10b981",
-  solar: "#f59e0b",
-  termico: "#ef4444",
-  otro: "#94a3b8",
+  hidro: "#0090D4",
+  eolico: "#00B140",
+  solar: "#FFC20E",
+  termico: "#E4002B",
+  otro: "#6C2C91",
 };
 
-// Compatibilidad hacia atrás — el theme provider expone los colores dinámicos.
 export const TECH_COLOR = DEFAULT_TECH_COLOR;
 
 export const SYSTEM_LABEL: Record<System, string> = {
@@ -73,6 +85,23 @@ export async function getMeasurementsByPlant(plantId: string): Promise<Measureme
   return (data ?? []) as Measurement[];
 }
 
+export async function getMeasurementsByPlants(plantIds: string[]): Promise<Measurement[]> {
+  if (!plantIds.length) return [];
+  const CHUNK = 100;
+  const all: Measurement[] = [];
+  for (let i = 0; i < plantIds.length; i += CHUNK) {
+    const slice = plantIds.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from("measurements")
+      .select("plant_id,date,mw")
+      .in("plant_id", slice)
+      .order("date");
+    if (error) throw error;
+    all.push(...((data ?? []) as Measurement[]));
+  }
+  return all;
+}
+
 export async function getMeasurementsByTech(
   tech: Technology,
   opts?: { system?: System[]; from?: string; to?: string },
@@ -80,7 +109,6 @@ export async function getMeasurementsByTech(
   const plants = await listPlants({ tech, system: opts?.system });
   if (!plants.length) return [];
   const ids = plants.map((p) => p.id);
-  // Fetch en chunks para evitar URL demasiado larga con muchos ids
   const CHUNK = 100;
   const all: Measurement[] = [];
   for (let i = 0; i < ids.length; i += CHUNK) {
@@ -107,20 +135,36 @@ export async function getLastUpdate(): Promise<{
   const { data, error } = await supabase
     .from("data_uploads")
     .select("technology,uploaded_at,filename")
+    .is("reverted_at", null)
     .order("uploaded_at", { ascending: false })
     .limit(1);
   if (error) throw error;
   return data?.[0] ?? null;
 }
 
-export async function listUploads(limit = 20) {
+export async function listUploads(limit = 30): Promise<UploadRow[]> {
   const { data, error } = await supabase
     .from("data_uploads")
-    .select("*")
+    .select("id,technology,filename,rows_inserted,plants_touched,uploaded_at,reverted_at")
     .order("uploaded_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as UploadRow[];
+}
+
+export async function revertUpload(uploadId: string): Promise<{ deleted: number }> {
+  // Borra las mediciones asociadas y marca la carga como revertida.
+  const { error: e1, count } = await supabase
+    .from("measurements")
+    .delete({ count: "exact" })
+    .eq("upload_id", uploadId);
+  if (e1) throw e1;
+  const { error: e2 } = await supabase
+    .from("data_uploads")
+    .update({ reverted_at: new Date().toISOString() })
+    .eq("id", uploadId);
+  if (e2) throw e2;
+  return { deleted: count ?? 0 };
 }
 
 // -------- Upload mediciones (matching por CÓDIGO) --------
@@ -131,9 +175,9 @@ export async function uploadMeasurements(args: {
   rows: Array<{ plantCode: string; plantName: string; date: string; mw: number }>;
 }) {
   const { technology, system = "SEIN", filename, rows } = args;
-  if (!rows.length) return { inserted: 0, plantsTouched: 0 };
+  if (!rows.length) return { inserted: 0, plantsTouched: 0, uploadId: null as string | null };
 
-  const uniq = new Map<string, string>(); // code -> name
+  const uniq = new Map<string, string>();
   for (const r of rows) {
     const code = r.plantCode.trim();
     if (code) uniq.set(code, r.plantName.trim() || code);
@@ -164,16 +208,32 @@ export async function uploadMeasurements(args: {
     for (const p of inserted ?? []) codeToId.set(p.code, p.id);
   }
 
+  // Crear registro de carga primero para obtener upload_id.
+  const { data: uploadRow, error: eUp } = await supabase
+    .from("data_uploads")
+    .insert({
+      technology,
+      filename,
+      rows_inserted: 0,
+      plants_touched: codeToId.size,
+    })
+    .select("id")
+    .single();
+  if (eUp) throw eUp;
+  const uploadId = uploadRow.id as string;
+
   const measurements = rows
     .map((r) => ({
       plant_id: codeToId.get(r.plantCode.trim()),
       date: r.date,
       mw: r.mw,
+      upload_id: uploadId,
     }))
     .filter((m) => m.plant_id && m.date && Number.isFinite(m.mw)) as Array<{
     plant_id: string;
     date: string;
     mw: number;
+    upload_id: string;
   }>;
 
   const CHUNK = 500;
@@ -187,14 +247,12 @@ export async function uploadMeasurements(args: {
     inserted += chunk.length;
   }
 
-  await supabase.from("data_uploads").insert({
-    technology,
-    filename,
-    rows_inserted: inserted,
-    plants_touched: codeToId.size,
-  });
+  await supabase
+    .from("data_uploads")
+    .update({ rows_inserted: inserted })
+    .eq("id", uploadId);
 
-  return { inserted, plantsTouched: codeToId.size };
+  return { inserted, plantsTouched: codeToId.size, uploadId };
 }
 
 // -------- Upload maestro de centrales (coordenadas + metadatos) --------
@@ -240,6 +298,74 @@ export async function upsertPlants(rows: Array<Partial<Plant> & { code: string }
   return { updated, inserted };
 }
 
+// -------- Plantillas Excel descargables --------
+export function downloadMeasurementsTemplate() {
+  const today = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const d0 = new Date(today);
+  const d1 = new Date(today); d1.setDate(d1.getDate() - 1);
+  const d2 = new Date(today); d2.setDate(d2.getDate() - 2);
+
+  const data = [
+    ["codigo", "nombre", "fecha", "mw"],
+    ["EOL001", "Central Eólica Ejemplo 1", iso(d2), 45.2],
+    ["EOL001", "Central Eólica Ejemplo 1", iso(d1), 52.7],
+    ["EOL001", "Central Eólica Ejemplo 1", iso(d0), 48.1],
+    ["EOL002", "Central Eólica Ejemplo 2", iso(d2), 12.4],
+    ["EOL002", "Central Eólica Ejemplo 2", iso(d1), 15.0],
+  ];
+  const instrucciones = [
+    ["PLANTILLA DE MEDICIONES DIARIAS"],
+    [""],
+    ["Orden y obligatoriedad de columnas:"],
+    ["codigo    OBLIGATORIO   Código único de la central (evita duplicados)"],
+    ["nombre    Recomendado   Nombre de la central. Se ignora si el código ya existe en el sistema."],
+    ["fecha     OBLIGATORIO   Formato YYYY-MM-DD o fecha de Excel"],
+    ["mw        OBLIGATORIO   Potencia diaria en MW (numérico, decimales con punto o coma)"],
+    [""],
+    ["Reglas anti-duplicados:"],
+    ["- Si el CÓDIGO ya existe, se actualizan sus mediciones."],
+    ["- Si el CÓDIGO no existe, se crea una nueva central con la tecnología y sistema elegidos en el formulario."],
+    ["- Dos filas con el mismo código y misma fecha se sobrescriben (última gana)."],
+    [""],
+    ["Antes de subir asegúrate de que cada central tenga SIEMPRE el mismo código."],
+    ["Para revertir una carga usa el botón \"Revertir\" en la tabla de últimas cargas."],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Mediciones");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(instrucciones), "Instrucciones");
+  XLSX.writeFile(wb, "plantilla_mediciones.xlsx");
+}
+
+export function downloadPlantsTemplate() {
+  const data = [
+    ["codigo", "nombre", "tecnologia", "sistema", "empresa", "region", "potencia_instalada_mw", "lat", "lng"],
+    ["EOL001", "Central Eólica Ejemplo 1", "eolico", "SEIN", "Empresa SAC", "Piura", 132.3, -5.1, -80.9],
+    ["HID001", "Central Hidro Ejemplo", "hidro", "COES", "Otra Empresa SAC", "Junín", 210.0, -11.2, -75.5],
+    ["SOL001", "Solar Ejemplo", "solar", "SEIN", "SolarCo", "Moquegua", 50.0, -17.1, -70.9],
+  ];
+  const instrucciones = [
+    ["PLANTILLA DE CENTRALES (MAESTRO)"],
+    [""],
+    ["codigo                   OBLIGATORIO"],
+    ["nombre                   OBLIGATORIO"],
+    ["tecnologia               OBLIGATORIO   Valores: hidro | eolico | solar | termico | otro"],
+    ["sistema                  OBLIGATORIO   Valores: SEIN | COES | AISLADO | OTRO"],
+    ["empresa                  Opcional"],
+    ["region                   Opcional"],
+    ["potencia_instalada_mw    Opcional      Numérico"],
+    ["lat                      Opcional      Numérico decimal (negativo para sur)"],
+    ["lng                      Opcional      Numérico decimal (negativo para oeste)"],
+    [""],
+    ["Si el código ya existe, se actualizan los campos con valor.  Si no existe, se crea la central."],
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Centrales");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(instrucciones), "Instrucciones");
+  XLSX.writeFile(wb, "plantilla_centrales.xlsx");
+}
+
 // -------- Paleta de colores persistente --------
 export interface Palette {
   preset: string;
@@ -252,13 +378,13 @@ export interface Palette {
 }
 
 export const DEFAULT_PALETTE: Palette = {
-  preset: "osinergmin",
-  hidro: "#0ea5e9",
-  eolico: "#10b981",
-  solar: "#f59e0b",
-  termico: "#ef4444",
-  otro: "#94a3b8",
-  accent: "#38bdf8",
+  preset: "osinergmin_vivo",
+  hidro: "#0090D4",
+  eolico: "#00B140",
+  solar: "#FFC20E",
+  termico: "#E4002B",
+  otro: "#6C2C91",
+  accent: "#00B7C7",
 };
 
 export async function getPalette(): Promise<Palette> {
@@ -273,4 +399,41 @@ export async function savePalette(palette: Palette): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .upsert({ id: "global", palette: palette as any });
   if (error) throw error;
+}
+
+// -------- Helpers de agregación (granularidad) --------
+export function bucketKey(iso: string, g: Granularity): string {
+  if (g === "day") return iso;
+  if (g === "month") return iso.slice(0, 7);
+  // week: ISO week (lunes)
+  const d = new Date(iso + "T00:00:00Z");
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - (day - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+export function dayOfPeriod(iso: string, g: Granularity): number {
+  const d = new Date(iso + "T00:00:00Z");
+  if (g === "day") {
+    const start = Date.UTC(d.getUTCFullYear(), 0, 0);
+    return Math.floor((d.getTime() - start) / 86400000);
+  }
+  if (g === "month") return d.getUTCMonth() + 1;
+  // week of year
+  const first = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const diff = (d.getTime() - first.getTime()) / 86400000;
+  return Math.ceil((diff + first.getUTCDay() + 1) / 7);
+}
+
+export function periodLabel(k: number, g: Granularity): string {
+  if (g === "month") {
+    return ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][k - 1] ?? String(k);
+  }
+  if (g === "week") return `Sem ${k}`;
+  const date = new Date(Date.UTC(2024, 0, k));
+  return date.toLocaleDateString("es-PE", { day: "2-digit", month: "short", timeZone: "UTC" });
+}
+
+export function periodCount(g: Granularity): number {
+  return g === "day" ? 366 : g === "week" ? 53 : 12;
 }

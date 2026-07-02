@@ -19,6 +19,7 @@ export type Database = {
           filename: string | null
           id: string
           plants_touched: number
+          reverted_at: string | null
           rows_inserted: number
           technology: string
           uploaded_at: string
@@ -27,6 +28,7 @@ export type Database = {
           filename?: string | null
           id?: string
           plants_touched?: number
+          reverted_at?: string | null
           rows_inserted?: number
           technology: string
           uploaded_at?: string
@@ -35,6 +37,7 @@ export type Database = {
           filename?: string | null
           id?: string
           plants_touched?: number
+          reverted_at?: string | null
           rows_inserted?: number
           technology?: string
           uploaded_at?: string
@@ -48,6 +51,7 @@ export type Database = {
           id: number
           mw: number
           plant_id: string
+          upload_id: string | null
         }
         Insert: {
           created_at?: string
@@ -55,6 +59,7 @@ export type Database = {
           id?: number
           mw: number
           plant_id: string
+          upload_id?: string | null
         }
         Update: {
           created_at?: string
@@ -62,6 +67,7 @@ export type Database = {
           id?: number
           mw?: number
           plant_id?: string
+          upload_id?: string | null
         }
         Relationships: [
           {
@@ -69,6 +75,13 @@ export type Database = {
             columns: ["plant_id"]
             isOneToOne: false
             referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "measurements_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "data_uploads"
             referencedColumns: ["id"]
           },
         ]

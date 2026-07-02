@@ -22,7 +22,7 @@ const ThemeCtx = createContext<Ctx>({
 });
 
 export const PALETTE_PRESETS: Record<string, Palette> = {
-  osinergmin: DEFAULT_PALETTE,
+  osinergmin_vivo: DEFAULT_PALETTE,
   corporativo: {
     preset: "corporativo",
     hidro: "#1e40af",
