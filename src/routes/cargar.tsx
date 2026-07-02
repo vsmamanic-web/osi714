@@ -46,20 +46,31 @@ function toISODate(v: unknown): string | null {
 
 // ---------- main component (tabs) ----------
 function UploadPage() {
-  const [tab, setTab] = useState<"mediciones" | "coords" | "maestro">("mediciones");
+  const [tab, setTab] = useState<"mediciones" | "coords" | "maestro" | "historial">("mediciones");
   return (
     <div className="p-6">
       <Toaster richColors theme="dark" position="top-right" />
-      <header className="mb-4">
-        <h1 className="text-2xl font-bold">Cargar Excel</h1>
-        <p className="text-sm text-slate-400">
-          Los datos se guardan permanentemente en la nube. Usa las pestañas para subir mediciones,
-          actualizar coordenadas y metadatos, o revisar el estado del maestro.
-        </p>
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Cargar Excel</h1>
+          <p className="text-sm text-slate-400">
+            Los datos se guardan permanentemente. Usa el matching por <b>código</b> para evitar duplicar centrales.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => downloadMeasurementsTemplate()}
+            className="rounded-md border border-sky-700 bg-sky-500/10 px-3 py-1.5 text-sm font-semibold text-sky-300 hover:bg-sky-500/20">
+            ⬇ Plantilla mediciones
+          </button>
+          <button onClick={() => downloadPlantsTemplate()}
+            className="rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20">
+            ⬇ Plantilla centrales
+          </button>
+        </div>
       </header>
 
       <div className="mb-4 inline-flex rounded-md border border-slate-800 bg-slate-900/60 p-1">
-        {(["mediciones", "coords", "maestro"] as const).map((t) => (
+        {(["mediciones", "coords", "maestro", "historial"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -67,7 +78,10 @@ function UploadPage() {
               tab === t ? "bg-sky-500/20 text-sky-300" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            {t === "mediciones" ? "1. Mediciones" : t === "coords" ? "2. Coordenadas / metadatos" : "3. Estado del maestro"}
+            {t === "mediciones" ? "1. Mediciones"
+              : t === "coords" ? "2. Coordenadas"
+              : t === "maestro" ? "3. Maestro"
+              : "4. Historial / Revertir"}
           </button>
         ))}
       </div>
@@ -75,6 +89,7 @@ function UploadPage() {
       {tab === "mediciones" && <MeasurementsUploader />}
       {tab === "coords" && <CoordsUploader />}
       {tab === "maestro" && <PlantsMaster />}
+      {tab === "historial" && <UploadHistory />}
     </div>
   );
 }
