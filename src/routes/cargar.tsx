@@ -396,3 +396,92 @@ function PlantsMaster() {
     </section>
   );
 }
+
+// ---------- (4) historial de cargas + revertir ----------
+function UploadHistory() {
+  const qc = useQueryClient();
+  const { data: uploads = [], isLoading, refetch } = useQuery({
+    queryKey: ["uploads"],
+    queryFn: () => listUploads(50),
+  });
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function handleRevert(id: string, name: string | null) {
+    if (!confirm(`¿Revertir la carga "${name ?? id.slice(0, 8)}"? Se eliminarán solo las mediciones subidas en esta carga; los datos previos quedan intactos.`)) return;
+    setBusyId(id);
+    try {
+      const { deleted } = await revertUpload(id);
+      toast.success(`Revertido: ${deleted.toLocaleString()} mediciones eliminadas.`);
+      qc.invalidateQueries();
+      refetch();
+    } catch (err) {
+      toast.error(`Error: ${(err as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+          Historial de cargas
+        </h2>
+        <button onClick={() => refetch()} className="text-xs text-sky-400 hover:underline">↻ Refrescar</button>
+      </div>
+      {isLoading ? (
+        <div className="p-6 text-center text-sm text-slate-500">Cargando…</div>
+      ) : uploads.length === 0 ? (
+        <div className="p-6 text-center text-sm text-slate-500">Aún no hay cargas registradas.</div>
+      ) : (
+        <div className="overflow-auto rounded-md border border-slate-800">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-900 text-slate-400">
+              <tr>
+                <th className="px-2 py-2 text-left">Fecha</th>
+                <th className="px-2 py-2 text-left">Tecnología</th>
+                <th className="px-2 py-2 text-left">Archivo</th>
+                <th className="px-2 py-2 text-right">Mediciones</th>
+                <th className="px-2 py-2 text-right">Centrales</th>
+                <th className="px-2 py-2 text-center">Estado</th>
+                <th className="px-2 py-2 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {uploads.map((u) => (
+                <tr key={u.id} className={`border-t border-slate-800 ${u.reverted_at ? "opacity-50" : ""}`}>
+                  <td className="px-2 py-1.5 tabular-nums">{new Date(u.uploaded_at).toLocaleString("es-PE")}</td>
+                  <td className="px-2 py-1.5 uppercase">{u.technology}</td>
+                  <td className="px-2 py-1.5 text-slate-300">{u.filename ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{u.rows_inserted.toLocaleString()}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{u.plants_touched}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    {u.reverted_at
+                      ? <span className="rounded bg-rose-500/20 px-2 py-0.5 text-rose-300">Revertido</span>
+                      : <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300">Activo</span>}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    {u.reverted_at ? (
+                      <span className="text-slate-500">—</span>
+                    ) : (
+                      <button
+                        disabled={busyId === u.id}
+                        onClick={() => handleRevert(u.id, u.filename)}
+                        className="rounded border border-rose-700 bg-rose-500/10 px-2 py-0.5 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
+                        {busyId === u.id ? "…" : "Revertir"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-400">
+        <b className="text-slate-200">Revertir</b> elimina únicamente las mediciones insertadas en esa carga
+        específica (por <code>upload_id</code>). Las cargas anteriores para las mismas centrales quedan intactas.
+      </div>
+    </section>
+  );
+}
