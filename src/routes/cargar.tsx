@@ -121,23 +121,44 @@ function MeasurementsUploader() {
         const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
         if (!aoa.length) continue;
 
-        // Detectar cabeceras. Espera dos filas de cabecera contiguas:
-        //   Fila A: CÓDIGO_1  CÓDIGO_2  ... (o vacío)
-        //   Fila B: Fecha     NOMBRE_1  NOMBRE_2 ...
-        // O una sola fila con nombres, si no hay códigos (fallback: se usa el nombre como código).
+        // --- Detección: formato LARGO (codigo/nombre/fecha/mw) vs ANCHO (una columna por central) ---
         let headerRow = -1;
         for (let i = 0; i < Math.min(aoa.length, 8); i++) {
           const row = aoa[i] || [];
-          if (row.some((c) => /^\s*fecha|date\s*$/i.test(String(c ?? "")))) {
-            headerRow = i;
-            break;
-          }
+          if (row.some((c) => /^\s*(fecha|date)\s*$/i.test(String(c ?? "")))) { headerRow = i; break; }
         }
         if (headerRow < 0) {
           push(`⚠ "${sheetName}": no se detectó fila con "Fecha".`);
           continue;
         }
         const headerNames = aoa[headerRow].map((c) => String(c ?? "").trim());
+        const lc = headerNames.map((h) => h.toLowerCase());
+        const isLong = lc.includes("mw") && (lc.includes("codigo") || lc.includes("código") || lc.includes("code"));
+
+        if (isLong) {
+          const iCode = lc.findIndex((h) => h === "codigo" || h === "código" || h === "code");
+          const iName = lc.findIndex((h) => h === "nombre" || h === "name" || h === "central");
+          const iDate = lc.findIndex((h) => h === "fecha" || h === "date");
+          const iMw = lc.findIndex((h) => h === "mw" || h === "potencia" || h === "valor");
+          const rows: Array<{ plantCode: string; plantName: string; date: string; mw: number }> = [];
+          for (let r = headerRow + 1; r < aoa.length; r++) {
+            const row = aoa[r]; if (!row) continue;
+            const code = String(row[iCode] ?? "").trim();
+            const iso = toISODate(row[iDate]);
+            const v = row[iMw];
+            const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
+            if (!code || !iso || !Number.isFinite(n)) continue;
+            rows.push({ plantCode: code, plantName: String(row[iName] ?? code).trim() || code, date: iso, mw: n });
+          }
+          if (!rows.length) { push(`⚠ "${sheetName}": 0 filas válidas.`); continue; }
+          push(`📤 "${sheetName}" (formato largo): ${rows.length.toLocaleString()} mediciones.`);
+          const { inserted, plantsTouched } = await uploadMeasurements({ technology: tech, system, filename: `${file.name} [${sheetName}]`, rows });
+          totalInserted += inserted;
+          push(`✅ "${sheetName}": ${inserted.toLocaleString()} OK · ${plantsTouched} centrales.`);
+          continue;
+        }
+
+        // --- Formato ANCHO (una columna por central) ---
         const dateIdx = headerNames.findIndex((h) => /^fecha|date$/i.test(h));
         // Fila de códigos: la fila inmediata anterior si tiene valores en columnas de datos
         const codeRow = headerRow > 0 ? aoa[headerRow - 1] || [] : [];
