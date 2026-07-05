@@ -477,9 +477,73 @@ function TechModule() {
             </div>
           </Card>
 
-          <Card title="Heatmap mes × año (MW promedio)">
-            <Heatmap {...heatmap} color={color} />
+          <Card title={`Heatmap ${heatmapMode === "week" ? "semana × año" : "mes × año"} (MW promedio)`}>
+            <div className="mb-3 inline-flex rounded-md border border-slate-800 p-0.5 text-xs">
+              {(["month","week"] as const).map((m) => (
+                <button key={m} onClick={() => setHeatmapMode(m)}
+                  className="rounded px-3 py-1 uppercase tracking-widest"
+                  style={{ background: heatmapMode === m ? color : "transparent", color: heatmapMode === m ? "white" : "#94a3b8" }}>
+                  {m === "month" ? "Mensual" : "Semanal"}
+                </button>
+              ))}
+            </div>
+            <Heatmap {...(heatmapMode === "week" ? heatmapWeek : heatmap)} color={color} />
           </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Distribución de centrales por potencia instalada">
+              <div className="h-[260px]">
+                <Bar data={{ labels: distribucionPotencia.labels, datasets: [{ label: "N° centrales", data: distribucionPotencia.counts, backgroundColor: "#00559E" }] }} options={chartOpts()} />
+              </div>
+            </Card>
+            <Card title="Días operación activa vs inactiva (top 20 centrales)">
+              <div className="h-[260px]">
+                <Bar
+                  data={{
+                    labels: diasActividad.map((d) => d.name),
+                    datasets: [
+                      { label: "Activo", data: diasActividad.map((d) => d.activo), backgroundColor: "#00934C", stack: "s" },
+                      { label: "Inactivo", data: diasActividad.map((d) => d.inactivo), backgroundColor: "#B8261F", stack: "s" },
+                    ],
+                  }}
+                  options={{
+                    responsive: true, maintainAspectRatio: false, indexAxis: "y" as const,
+                    plugins: { legend: { labels: { color: "#cbd5e1", font: { size: 10 } } } },
+                    scales: {
+                      x: { stacked: true, ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+                      y: { stacked: true, ticks: { color: "#94a3b8", font: { size: 9 } }, grid: { color: "#1e293b" } },
+                    },
+                  }}
+                />
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Ranking · Top 15 centrales por generación (MW promedio diario)">
+              <div className="h-[320px]">
+                <Bar
+                  data={{ labels: rankingCentrales.map((r) => r.name), datasets: [{ label: "MW promedio", data: rankingCentrales.map((r) => r.avg), backgroundColor: "#00559E" }] }}
+                  options={{ ...chartOpts(), indexAxis: "y" as const }}
+                />
+              </div>
+            </Card>
+            <Card title="Coeficiente de Variación por central (mayor = más intermitente)">
+              <div className="h-[320px]">
+                <Bar
+                  data={{ labels: coefVariacion.map((r) => r.name), datasets: [{ label: "CV %", data: coefVariacion.map((r) => r.cv), backgroundColor: "#F39F30" }] }}
+                  options={{ ...chartOpts(), indexAxis: "y" as const }}
+                />
+              </div>
+            </Card>
+          </div>
+
+          <Card title="Evolución anual por central — Top 8 (promedio MW)">
+            <div className="h-[340px]">
+              <Line data={evolucionAnual} options={{ ...chartOpts(), plugins: { legend: { labels: { color: "#cbd5e1", font: { size: 10 }, boxWidth: 10 } } } }} />
+            </div>
+          </Card>
+
 
           <Card title="Detección de anomalías (fuera de ±2σ de la media móvil 30)">
             <div className="grid gap-4 lg:grid-cols-2">
