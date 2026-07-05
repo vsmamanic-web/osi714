@@ -22,33 +22,26 @@ const ThemeCtx = createContext<Ctx>({
 });
 
 export const PALETTE_PRESETS: Record<string, Palette> = {
-  osinergmin_vivo: DEFAULT_PALETTE,
+  osinergmin_institucional: DEFAULT_PALETTE,
+  osinergmin_vivo: {
+    preset: "osinergmin_vivo",
+    hidro: "#0090D4", eolico: "#00B140", solar: "#FFC20E",
+    termico: "#E4002B", otro: "#6C2C91", accent: "#00B7C7",
+  },
   corporativo: {
     preset: "corporativo",
-    hidro: "#1e40af",
-    eolico: "#0f766e",
-    solar: "#b45309",
-    termico: "#7f1d1d",
-    otro: "#475569",
-    accent: "#3b82f6",
+    hidro: "#1e40af", eolico: "#0f766e", solar: "#b45309",
+    termico: "#7f1d1d", otro: "#475569", accent: "#3b82f6",
   },
   contraste: {
     preset: "contraste",
-    hidro: "#00e5ff",
-    eolico: "#00ff88",
-    solar: "#ffd600",
-    termico: "#ff1744",
-    otro: "#e0e0e0",
-    accent: "#ffffff",
+    hidro: "#00e5ff", eolico: "#00ff88", solar: "#ffd600",
+    termico: "#ff1744", otro: "#e0e0e0", accent: "#ffffff",
   },
   calido: {
     preset: "calido",
-    hidro: "#06b6d4",
-    eolico: "#84cc16",
-    solar: "#f97316",
-    termico: "#dc2626",
-    otro: "#a3a3a3",
-    accent: "#fb923c",
+    hidro: "#06b6d4", eolico: "#84cc16", solar: "#f97316",
+    termico: "#dc2626", otro: "#a3a3a3", accent: "#fb923c",
   },
 };
 
