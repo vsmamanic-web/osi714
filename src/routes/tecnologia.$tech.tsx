@@ -224,12 +224,173 @@ function TechModule() {
     return { list: list.slice(-50).reverse(), byDow: dowCount, byMonth: moCount };
   }, [sortedDates, sortedValues]);
 
+  // Heatmap toggle: semanal | mensual
+  const [heatmapMode, setHeatmapMode] = useState<"week" | "month">("month");
+
+  const heatmapWeek = useMemo(() => {
+    const map = new Map<string, { sum: number; n: number }>();
+    for (const r of filteredRows) {
+      const d = new Date(r.date + "T00:00:00Z");
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() - (day - 1));
+      const first = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const wk = Math.ceil(((d.getTime() - first.getTime()) / 86400000 + first.getUTCDay() + 1) / 7);
+      const k = `${d.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
+      const cur = map.get(k) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n += 1; map.set(k, cur);
+    }
+    const years = Array.from(new Set([...map.keys()].map((k) => k.slice(0, 4)))).sort();
+    const weeks = Array.from({ length: 53 }, (_, i) => `W${String(i + 1).padStart(2, "0")}`);
+    let vmax = 0;
+    const cells: Array<{ y: string; m: string; v: number | null }> = [];
+    for (const y of years) for (const w of weeks) {
+      const v = map.get(`${y}-${w}`);
+      const avg = v ? v.sum / v.n : null;
+      if (avg != null && avg > vmax) vmax = avg;
+      cells.push({ y, m: w, v: avg });
+    }
+    return { years, months: weeks, cells, vmax };
+  }, [filteredRows]);
+
+  // Distribución por potencia instalada
+  const distribucionPotencia = useMemo(() => {
+    const buckets = [0, 10, 25, 50, 100, 200, 500, 1000, 5000];
+    const labels = buckets.slice(0, -1).map((b, i) => `${b}-${buckets[i + 1]} MW`);
+    const counts = Array(buckets.length - 1).fill(0);
+    for (const p of filteredPlants) {
+      const mw = Number(p.installed_mw ?? 0);
+      const idx = buckets.findIndex((b, i) => mw >= b && mw < buckets[i + 1]);
+      if (idx >= 0) counts[idx]++;
+    }
+    return { labels, counts };
+  }, [filteredPlants]);
+
+  // Días activos vs inactivos por central (activo = mw > 0)
+  const diasActividad = useMemo(() => {
+    const perPlant = new Map<string, { activo: number; inactivo: number }>();
+    for (const r of filteredRows) {
+      const cur = perPlant.get(r.plant_id) ?? { activo: 0, inactivo: 0 };
+      if (Number(r.mw) > 0) cur.activo++; else cur.inactivo++;
+      perPlant.set(r.plant_id, cur);
+    }
+    const arr = [...perPlant.entries()]
+      .map(([pid, v]) => ({ name: plantById.get(pid)?.name ?? pid.slice(0, 6), ...v, total: v.activo + v.inactivo }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 20);
+    return arr;
+  }, [filteredRows, plantById]);
+
+  // Ranking Top centrales por promedio MW diario
+  const rankingCentrales = useMemo(() => {
+    const perPlant = new Map<string, { sum: number; n: number }>();
+    for (const r of filteredRows) {
+      const cur = perPlant.get(r.plant_id) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n++;
+      perPlant.set(r.plant_id, cur);
+    }
+    return [...perPlant.entries()]
+      .map(([pid, v]) => ({
+        name: plantById.get(pid)?.name ?? pid.slice(0, 6),
+        code: plantById.get(pid)?.code ?? "",
+        avg: v.n ? v.sum / v.n : 0,
+      }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 15);
+  }, [filteredRows, plantById]);
+
+  // Evolución anual por central (promedio MW por año) - top 8
+  const evolucionAnual = useMemo(() => {
+    const perPlantYear = new Map<string, Map<number, { sum: number; n: number }>>();
+    for (const r of filteredRows) {
+      const y = Number(r.date.slice(0, 4));
+      let inner = perPlantYear.get(r.plant_id);
+      if (!inner) { inner = new Map(); perPlantYear.set(r.plant_id, inner); }
+      const cur = inner.get(y) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n++;
+      inner.set(y, cur);
+    }
+    const totals = [...perPlantYear.entries()].map(([pid, m]) => {
+      let sum = 0, n = 0;
+      for (const v of m.values()) { sum += v.sum; n += v.n; }
+      return { pid, avg: n ? sum / n : 0 };
+    }).sort((a, b) => b.avg - a.avg).slice(0, 8);
+    const yearSet = new Set<number>();
+    for (const [, m] of perPlantYear) for (const y of m.keys()) yearSet.add(y);
+    const years = [...yearSet].sort();
+    const palette = ["#00559E", "#00B6F1", "#FFD400", "#F39F30", "#7DA9DD", "#B8261F", "#00934C", "#8E44AD"];
+    return {
+      labels: years.map(String),
+      datasets: totals.map((t, i) => ({
+        label: plantById.get(t.pid)?.name ?? t.pid.slice(0, 6),
+        data: years.map((y) => {
+          const v = perPlantYear.get(t.pid)?.get(y);
+          return v && v.n ? v.sum / v.n : null;
+        }),
+        borderColor: palette[i % palette.length],
+        backgroundColor: `${palette[i % palette.length]}33`,
+        spanGaps: true, tension: 0.25, pointRadius: 3,
+      })),
+    };
+  }, [filteredRows, plantById]);
+
+  // Coeficiente de Variación por central (mayor CV = más intermitente)
+  const coefVariacion = useMemo(() => {
+    const perPlant = new Map<string, number[]>();
+    for (const r of filteredRows) {
+      let arr = perPlant.get(r.plant_id);
+      if (!arr) { arr = []; perPlant.set(r.plant_id, arr); }
+      arr.push(Number(r.mw));
+    }
+    return [...perPlant.entries()]
+      .map(([pid, arr]) => {
+        if (arr.length < 3) return null;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        if (mean === 0) return null;
+        const std = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / arr.length);
+        return { name: plantById.get(pid)?.name ?? pid.slice(0, 6), cv: (std / mean) * 100 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b!.cv - a!.cv))
+      .slice(0, 15) as Array<{ name: string; cv: number }>;
+  }, [filteredRows, plantById]);
+
   const toggleYear = (y: number) => {
     const next = new Set(effectiveYears);
     if (next.has(y)) next.delete(y);
     else next.add(y);
     setSelectedYears(next);
   };
+
+  const dashboardRef = useRef<HTMLDivElement>(null);
+
+  async function handleExportPDF() {
+    const el = dashboardRef.current;
+    if (!el) return;
+    const topPlant = rankingCentrales[0];
+    const avgCV = coefVariacion.length ? coefVariacion.reduce((a, b) => a + b.cv, 0) / coefVariacion.length : 0;
+    await exportReportPDF({
+      title: `Informe de ${TECH_LABEL[tech]}`,
+      subtitle: `Sistema SEIN/COES · ${filteredPlants.length} centrales · ${filteredRows.length.toLocaleString()} registros · Generado ${new Date().toLocaleDateString("es-PE")}`,
+      sections: [
+        { title: "Resumen ejecutivo", text: `Energía total ${kpis.total.toLocaleString("es-PE",{maximumFractionDigits:0})} MW·${granularityLabel}. Media ${kpis.media.toFixed(1)} MW, máximo ${kpis.max.toFixed(1)} MW. Top central: ${topPlant?.name ?? "—"} (${topPlant?.avg.toFixed(1) ?? "0"} MW promedio). Coef. Variación promedio: ${avgCV.toFixed(1)}% (intermittencia).` },
+        { title: "Dashboard", node: el },
+      ],
+      filename: `informe_${tech}_${new Date().toISOString().slice(0,10)}.pdf`,
+    });
+  }
+
+  function handleExportExcel() {
+    exportRowsAsExcel([
+      { name: "Serie temporal", rows: sortedDates.map((d, i) => ({ fecha: d, mw: sortedValues[i] })) },
+      { name: "Top centrales", rows: rankingCentrales.map((r) => ({ codigo: r.code, central: r.name, promedio_MW: r.avg })) },
+      { name: "Coef Variacion", rows: coefVariacion.map((r) => ({ central: r.name, CV_pct: r.cv })) },
+      { name: "Dias operacion", rows: diasActividad.map((r) => ({ central: r.name, activo: r.activo, inactivo: r.inactivo })) },
+    ], `datos_${tech}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  async function handleExportPNG() {
+    if (dashboardRef.current) await exportNodeAsPNG(dashboardRef.current, `dashboard_${tech}.png`);
+  }
 
   const granularityLabel = granularity === "day" ? "diaria" : granularity === "week" ? "semanal" : "mensual";
 
