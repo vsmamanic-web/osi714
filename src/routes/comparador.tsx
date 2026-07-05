@@ -15,8 +15,8 @@ import {
 } from "@/lib/centrales";
 import { macrozoneOf, MACROZONES, MACROZONE_COLOR, type Macrozone } from "@/lib/macrozones";
 import { forecastCurrentYear } from "@/lib/forecasting";
-import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
-import { Bar, Line } from "react-chartjs-2";
+import { exportReportPDF } from "@/lib/exportReport";
+import { Line } from "react-chartjs-2";
 import {
   BarElement,
   CategoryScale,
