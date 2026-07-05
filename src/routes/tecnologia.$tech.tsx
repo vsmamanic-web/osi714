@@ -395,7 +395,7 @@ function TechModule() {
   const granularityLabel = granularity === "day" ? "diaria" : granularity === "week" ? "semanal" : "mensual";
 
   return (
-    <div className="p-6">
+    <div className="p-6" ref={dashboardRef}>
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color }}>{TECH_LABEL[tech]}s — SEIN/COES</h1>
@@ -403,14 +403,20 @@ function TechModule() {
             {filteredPlants.length} centrales · {filteredRows.length.toLocaleString()} registros
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs">
-          <span className="uppercase tracking-widest text-slate-400">Región</span>
-          <select value={region} onChange={(e) => setRegion(e.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
-            {regions.map((r) => <option key={r ?? "n"} value={r ?? ""}>{r === "ALL" ? "Todas" : r}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs">
+            <span className="uppercase tracking-widest text-slate-400">Región</span>
+            <select value={region} onChange={(e) => setRegion(e.target.value)}
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
+              {regions.map((r) => <option key={r ?? "n"} value={r ?? ""}>{r === "ALL" ? "Todas" : r}</option>)}
+            </select>
+          </label>
+          <button onClick={handleExportPNG} className="rounded-md border border-sky-700 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20">⬇ PNG</button>
+          <button onClick={handleExportExcel} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">⬇ Excel</button>
+          <button onClick={handleExportPDF} className="rounded-md border border-amber-700 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20">📄 Informe PDF</button>
+        </div>
       </header>
+
 
       <div className="mb-4">
         <ChartControls
