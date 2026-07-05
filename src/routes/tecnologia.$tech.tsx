@@ -26,6 +26,8 @@ import {
 } from "chart.js";
 import { useTechColor } from "@/lib/theme";
 import { ChartControls } from "@/components/ChartControls";
+import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { useRef } from "react";
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend, TimeScale);
 
