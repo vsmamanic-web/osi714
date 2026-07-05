@@ -1,17 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   dayOfPeriod,
   getMeasurementsByPlant,
   getMeasurementsByPlants,
+  getMeasurementsByTech,
   listPlants,
   periodCount,
   periodLabel,
+  TECH_LABEL,
   type Granularity,
+  type Technology,
 } from "@/lib/centrales";
+import { macrozoneOf, MACROZONES, MACROZONE_COLOR, type Macrozone } from "@/lib/macrozones";
+import { forecastCurrentYear } from "@/lib/forecasting";
+import { exportReportPDF } from "@/lib/exportReport";
 import { Line } from "react-chartjs-2";
 import {
+  BarElement,
   CategoryScale,
   Chart as ChartJS,
   Filler,
@@ -23,7 +30,7 @@ import {
 } from "chart.js";
 import { yearColor } from "@/components/ChartControls";
 
-ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
+ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
 
 export const Route = createFileRoute("/comparador")({
   head: () => ({ meta: [{ title: "Comparador multi-año — SEIN BI" }] }),
@@ -32,19 +39,249 @@ export const Route = createFileRoute("/comparador")({
 
 function Comparator() {
   const { data: plants = [] } = useQuery({ queryKey: ["plants"], queryFn: () => listPlants() });
+  const rootRef = useRef<HTMLDivElement>(null);
   return (
-    <div className="p-6 space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold">Comparador multi-año</h1>
-        <p className="text-sm text-slate-400">
-          Superpone la evolución (MW) de varios años sobre el mismo eje temporal.
-        </p>
+    <div className="p-6 space-y-8" ref={rootRef}>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ color: "#00559E" }}>Comparador multi-año</h1>
+          <p className="text-sm text-slate-400">
+            Compara evolución (MW) por central, macrozona y años; con detección de bajas y pronóstico.
+          </p>
+        </div>
+        <button
+          onClick={async () => rootRef.current && exportReportPDF({
+            title: "Comparador multi-año",
+            subtitle: `Generado ${new Date().toLocaleString("es-PE")}`,
+            sections: [{ title: "Dashboard comparativo", node: rootRef.current }],
+            filename: `comparador_${new Date().toISOString().slice(0,10)}.pdf`,
+          })}
+          className="rounded-md border border-amber-700 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20">
+          📄 Informe PDF
+        </button>
       </header>
+      <MacrozoneBlock />
+      <ForecastBlock plants={plants} />
       <SinglePlantBlock plants={plants} />
       <MultiPlantBlock plants={plants} />
     </div>
   );
 }
+
+// -------------------------- Bloque Macrozona --------------------------
+function MacrozoneBlock() {
+  const [tech, setTech] = useState<Technology>("hidro");
+  const [granularity, setGranularity] = useState<Granularity>("month");
+  const { data: rows = [] } = useQuery({
+    queryKey: ["macrozone-meas", tech],
+    queryFn: () => getMeasurementsByTech(tech),
+  });
+  const { data: plants = [] } = useQuery({
+    queryKey: ["plants", tech, "any"],
+    queryFn: () => listPlants({ tech }),
+  });
+  const plantZone = useMemo(() => {
+    const m = new Map<string, Macrozone>();
+    for (const p of plants) m.set(p.id, macrozoneOf(p.region));
+    return m;
+  }, [plants]);
+
+  const years = useMemo(() => {
+    const s = new Set<number>();
+    for (const r of rows) s.add(Number(r.date.slice(0, 4)));
+    return [...s].sort();
+  }, [rows]);
+  const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set());
+  useEffect(() => { setSelectedYears(new Set(years)); }, [years.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const effectiveYears = selectedYears.size ? selectedYears : new Set(years);
+
+  const chart = useMemo(() => {
+    const N = periodCount(granularity);
+    // clave: `${macrozona}|${year}` -> { sum, nSet }
+    const bucket = new Map<string, { sum: number[]; nSet: Array<Set<string>> }>();
+    for (const r of rows) {
+      const y = Number(r.date.slice(0, 4));
+      if (!effectiveYears.has(y)) continue;
+      const zone = plantZone.get(r.plant_id) ?? "Otro";
+      if (zone === "Otro") continue;
+      const k = dayOfPeriod(r.date, granularity);
+      const key = `${zone}|${y}`;
+      let s = bucket.get(key);
+      if (!s) {
+        s = { sum: Array(N + 1).fill(0), nSet: Array.from({ length: N + 1 }, () => new Set<string>()) };
+        bucket.set(key, s);
+      }
+      s.sum[k] += Number(r.mw);
+      s.nSet[k].add(r.plant_id);
+    }
+    const labels = Array.from({ length: N }, (_, i) => periodLabel(i + 1, granularity));
+    const datasets: Array<{ label: string; data: (number | null)[]; borderColor: string; backgroundColor: string; borderDash?: number[]; pointRadius: number; tension: number; borderWidth: number; spanGaps: boolean }> = [];
+    const yearsArr = [...effectiveYears].sort();
+    for (const zone of MACROZONES) {
+      for (const [i, y] of yearsArr.entries()) {
+        const s = bucket.get(`${zone}|${y}`);
+        if (!s) continue;
+        datasets.push({
+          label: `${zone} ${y}`,
+          data: labels.map((_, i2) => (s.nSet[i2 + 1].size ? s.sum[i2 + 1] / s.nSet[i2 + 1].size : null)),
+          borderColor: MACROZONE_COLOR[zone],
+          backgroundColor: `${MACROZONE_COLOR[zone]}22`,
+          borderDash: i === 0 ? undefined : i === 1 ? [4, 3] : [2, 2],
+          pointRadius: 0, tension: 0.25, borderWidth: 2, spanGaps: true,
+        });
+      }
+    }
+    return { labels, datasets };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, [...effectiveYears].join(","), granularity, plantZone]);
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold">🌎 Comparativo por macrozona</h2>
+      <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs">
+            <span className="uppercase tracking-widest text-slate-400">Tecnología</span>
+            <select value={tech} onChange={(e) => setTech(e.target.value as Technology)}
+              className="ml-2 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm">
+              {(["hidro","eolico","solar","termico"] as Technology[]).map((t) => <option key={t} value={t}>{TECH_LABEL[t]}</option>)}
+            </select>
+          </label>
+          <GranularityToggle value={granularity} onChange={setGranularity} />
+          <div className="flex flex-wrap gap-1">
+            {years.map((y, i) => {
+              const active = effectiveYears.has(y);
+              const c = yearColor(i);
+              return (
+                <button key={y}
+                  onClick={() => {
+                    const next = new Set(effectiveYears);
+                    if (next.has(y)) next.delete(y); else next.add(y);
+                    setSelectedYears(next);
+                  }}
+                  className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+                  style={{ borderColor: c, color: active ? "white" : c, background: active ? c : "transparent" }}>
+                  {y}
+                </button>
+              );
+            })}
+          </div>
+          <div className="ml-auto flex gap-2">
+            {MACROZONES.map((z) => (
+              <span key={z} className="inline-flex items-center gap-1 text-[11px] text-slate-300">
+                <span className="inline-block h-2 w-4 rounded-sm" style={{ background: MACROZONE_COLOR[z] }} /> {z}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="h-[380px]">
+          <Line data={chart} options={commonOpts()} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// -------------------------- Bloque Pronóstico y Riesgo --------------------------
+function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; name: string; technology: string; system: string }> }) {
+  const [plantId, setPlantId] = useState<string>("");
+  const { data: meas = [] } = useQuery({
+    queryKey: ["forecast-meas", plantId],
+    queryFn: () => getMeasurementsByPlant(plantId),
+    enabled: !!plantId,
+  });
+
+  const forecast = useMemo(() => {
+    if (!meas.length) return null;
+    const byYear = new Map<number, number[]>();
+    const counts = new Map<number, number[]>();
+    for (const m of meas) {
+      const y = Number(m.date.slice(0, 4));
+      const mo = new Date(m.date + "T00:00:00Z").getUTCMonth();
+      let a = byYear.get(y); if (!a) { a = Array(12).fill(0); byYear.set(y, a); }
+      let c = counts.get(y); if (!c) { c = Array(12).fill(0); counts.set(y, c); }
+      a[mo] += Number(m.mw); c[mo] += 1;
+    }
+    const monthly = new Map<number, number[]>();
+    for (const [y, sums] of byYear.entries()) {
+      const cs = counts.get(y)!;
+      monthly.set(y, sums.map((s, i) => (cs[i] ? s / cs[i] : 0)));
+    }
+    return forecastCurrentYear(monthly);
+  }, [meas]);
+
+  const p = plants.find((x) => x.id === plantId);
+  const riskCounts = forecast ? { alto: forecast.risk.filter((r) => r === "Alto").length, medio: forecast.risk.filter((r) => r === "Medio").length } : null;
+  const overallRisk = riskCounts ? (riskCounts.alto >= 3 ? "Alto" : riskCounts.alto + riskCounts.medio >= 4 ? "Medio" : "Bajo") : "—";
+  const riskColor = overallRisk === "Alto" ? "#B8261F" : overallRisk === "Medio" ? "#F39F30" : "#00934C";
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold">🔮 Detección de bajas y pronóstico</h2>
+      <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <select value={plantId} onChange={(e) => setPlantId(e.target.value)}
+            className="min-w-[280px] flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+            <option value="">— Selecciona una central para pronosticar —</option>
+            {plants.map((pl) => <option key={pl.id} value={pl.id}>[{pl.code}] {pl.name}</option>)}
+          </select>
+          {forecast && (
+            <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-2">
+              <span className="text-xs uppercase tracking-widest text-slate-400">Riesgo global</span>
+              <span className="rounded-full px-3 py-0.5 text-sm font-bold" style={{ background: `${riskColor}22`, color: riskColor }}>{overallRisk}</span>
+            </div>
+          )}
+        </div>
+        {forecast && p ? (
+          <>
+            <div className="h-[320px]">
+              <Line
+                data={{
+                  labels: ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"],
+                  datasets: [
+                    { label: "Promedio histórico", data: forecast.histAvg, borderColor: "#7DA9DD", backgroundColor: "#7DA9DD33", tension: 0.3, pointRadius: 3, borderWidth: 2 },
+                    { label: `Pronóstico ${new Date().getFullYear()}`, data: forecast.forecast, borderColor: "#00559E", backgroundColor: "#00559E33", tension: 0.3, pointRadius: 4, borderWidth: 2, borderDash: [6, 4] },
+                  ],
+                }}
+                options={commonOpts()}
+              />
+            </div>
+            <div className="overflow-auto rounded-md border border-slate-800">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-900 text-slate-400"><tr>
+                  <th className="px-2 py-1 text-left">Mes</th>
+                  <th className="px-2 py-1 text-right">Histórico (MW)</th>
+                  <th className="px-2 py-1 text-right">Pronóstico (MW)</th>
+                  <th className="px-2 py-1 text-center">Riesgo</th>
+                </tr></thead>
+                <tbody>
+                  {forecast.months.map((mo, i) => {
+                    const r = forecast.risk[i];
+                    const c = r === "Alto" ? "#B8261F" : r === "Medio" ? "#F39F30" : "#00934C";
+                    return (
+                      <tr key={mo} className="border-t border-slate-800">
+                        <td className="px-2 py-1">{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{forecast.histAvg[i].toFixed(1)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{forecast.forecast[i]?.toFixed(1) ?? "—"}</td>
+                        <td className="px-2 py-1 text-center"><span className="rounded px-2 py-0.5 text-[10px] font-semibold" style={{ background: `${c}22`, color: c }}>{r}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="grid h-[240px] place-items-center text-sm text-slate-500">
+            {plantId ? "Cargando datos históricos…" : "Selecciona una central para ver el pronóstico."}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+
 
 // -------------------------- Bloque 1: una central --------------------------
 function SinglePlantBlock({ plants }: { plants: Array<{ id: string; code: string; name: string; technology: string; system: string }> }) {

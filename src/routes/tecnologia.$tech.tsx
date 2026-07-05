@@ -26,6 +26,8 @@ import {
 } from "chart.js";
 import { useTechColor } from "@/lib/theme";
 import { ChartControls } from "@/components/ChartControls";
+import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { useRef } from "react";
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend, TimeScale);
 
@@ -222,6 +224,136 @@ function TechModule() {
     return { list: list.slice(-50).reverse(), byDow: dowCount, byMonth: moCount };
   }, [sortedDates, sortedValues]);
 
+  // Heatmap toggle: semanal | mensual
+  const [heatmapMode, setHeatmapMode] = useState<"week" | "month">("month");
+
+  const heatmapWeek = useMemo(() => {
+    const map = new Map<string, { sum: number; n: number }>();
+    for (const r of filteredRows) {
+      const d = new Date(r.date + "T00:00:00Z");
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() - (day - 1));
+      const first = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const wk = Math.ceil(((d.getTime() - first.getTime()) / 86400000 + first.getUTCDay() + 1) / 7);
+      const k = `${d.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
+      const cur = map.get(k) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n += 1; map.set(k, cur);
+    }
+    const years = Array.from(new Set([...map.keys()].map((k) => k.slice(0, 4)))).sort();
+    const weeks = Array.from({ length: 53 }, (_, i) => `W${String(i + 1).padStart(2, "0")}`);
+    let vmax = 0;
+    const cells: Array<{ y: string; m: string; v: number | null }> = [];
+    for (const y of years) for (const w of weeks) {
+      const v = map.get(`${y}-${w}`);
+      const avg = v ? v.sum / v.n : null;
+      if (avg != null && avg > vmax) vmax = avg;
+      cells.push({ y, m: w, v: avg });
+    }
+    return { years, months: weeks, cells, vmax };
+  }, [filteredRows]);
+
+  // Distribución por potencia instalada
+  const distribucionPotencia = useMemo(() => {
+    const buckets = [0, 10, 25, 50, 100, 200, 500, 1000, 5000];
+    const labels = buckets.slice(0, -1).map((b, i) => `${b}-${buckets[i + 1]} MW`);
+    const counts = Array(buckets.length - 1).fill(0);
+    for (const p of filteredPlants) {
+      const mw = Number(p.installed_mw ?? 0);
+      const idx = buckets.findIndex((b, i) => mw >= b && mw < buckets[i + 1]);
+      if (idx >= 0) counts[idx]++;
+    }
+    return { labels, counts };
+  }, [filteredPlants]);
+
+  // Días activos vs inactivos por central (activo = mw > 0)
+  const diasActividad = useMemo(() => {
+    const perPlant = new Map<string, { activo: number; inactivo: number }>();
+    for (const r of filteredRows) {
+      const cur = perPlant.get(r.plant_id) ?? { activo: 0, inactivo: 0 };
+      if (Number(r.mw) > 0) cur.activo++; else cur.inactivo++;
+      perPlant.set(r.plant_id, cur);
+    }
+    const arr = [...perPlant.entries()]
+      .map(([pid, v]) => ({ name: plantById.get(pid)?.name ?? pid.slice(0, 6), ...v, total: v.activo + v.inactivo }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 20);
+    return arr;
+  }, [filteredRows, plantById]);
+
+  // Ranking Top centrales por promedio MW diario
+  const rankingCentrales = useMemo(() => {
+    const perPlant = new Map<string, { sum: number; n: number }>();
+    for (const r of filteredRows) {
+      const cur = perPlant.get(r.plant_id) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n++;
+      perPlant.set(r.plant_id, cur);
+    }
+    return [...perPlant.entries()]
+      .map(([pid, v]) => ({
+        name: plantById.get(pid)?.name ?? pid.slice(0, 6),
+        code: plantById.get(pid)?.code ?? "",
+        avg: v.n ? v.sum / v.n : 0,
+      }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 15);
+  }, [filteredRows, plantById]);
+
+  // Evolución anual por central (promedio MW por año) - top 8
+  const evolucionAnual = useMemo(() => {
+    const perPlantYear = new Map<string, Map<number, { sum: number; n: number }>>();
+    for (const r of filteredRows) {
+      const y = Number(r.date.slice(0, 4));
+      let inner = perPlantYear.get(r.plant_id);
+      if (!inner) { inner = new Map(); perPlantYear.set(r.plant_id, inner); }
+      const cur = inner.get(y) ?? { sum: 0, n: 0 };
+      cur.sum += Number(r.mw); cur.n++;
+      inner.set(y, cur);
+    }
+    const totals = [...perPlantYear.entries()].map(([pid, m]) => {
+      let sum = 0, n = 0;
+      for (const v of m.values()) { sum += v.sum; n += v.n; }
+      return { pid, avg: n ? sum / n : 0 };
+    }).sort((a, b) => b.avg - a.avg).slice(0, 8);
+    const yearSet = new Set<number>();
+    for (const [, m] of perPlantYear) for (const y of m.keys()) yearSet.add(y);
+    const years = [...yearSet].sort();
+    const palette = ["#00559E", "#00B6F1", "#FFD400", "#F39F30", "#7DA9DD", "#B8261F", "#00934C", "#8E44AD"];
+    return {
+      labels: years.map(String),
+      datasets: totals.map((t, i) => ({
+        label: plantById.get(t.pid)?.name ?? t.pid.slice(0, 6),
+        data: years.map((y) => {
+          const v = perPlantYear.get(t.pid)?.get(y);
+          return v && v.n ? v.sum / v.n : null;
+        }),
+        borderColor: palette[i % palette.length],
+        backgroundColor: `${palette[i % palette.length]}33`,
+        spanGaps: true, tension: 0.25, pointRadius: 3,
+      })),
+    };
+  }, [filteredRows, plantById]);
+
+  // Coeficiente de Variación por central (mayor CV = más intermitente)
+  const coefVariacion = useMemo(() => {
+    const perPlant = new Map<string, number[]>();
+    for (const r of filteredRows) {
+      let arr = perPlant.get(r.plant_id);
+      if (!arr) { arr = []; perPlant.set(r.plant_id, arr); }
+      arr.push(Number(r.mw));
+    }
+    return [...perPlant.entries()]
+      .map(([pid, arr]) => {
+        if (arr.length < 3) return null;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        if (mean === 0) return null;
+        const std = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / arr.length);
+        return { name: plantById.get(pid)?.name ?? pid.slice(0, 6), cv: (std / mean) * 100 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b!.cv - a!.cv))
+      .slice(0, 15) as Array<{ name: string; cv: number }>;
+  }, [filteredRows, plantById]);
+
   const toggleYear = (y: number) => {
     const next = new Set(effectiveYears);
     if (next.has(y)) next.delete(y);
@@ -229,10 +361,41 @@ function TechModule() {
     setSelectedYears(next);
   };
 
+  const dashboardRef = useRef<HTMLDivElement>(null);
+
+  async function handleExportPDF() {
+    const el = dashboardRef.current;
+    if (!el) return;
+    const topPlant = rankingCentrales[0];
+    const avgCV = coefVariacion.length ? coefVariacion.reduce((a, b) => a + b.cv, 0) / coefVariacion.length : 0;
+    await exportReportPDF({
+      title: `Informe de ${TECH_LABEL[tech]}`,
+      subtitle: `Sistema SEIN/COES · ${filteredPlants.length} centrales · ${filteredRows.length.toLocaleString()} registros · Generado ${new Date().toLocaleDateString("es-PE")}`,
+      sections: [
+        { title: "Resumen ejecutivo", text: `Energía total ${kpis.total.toLocaleString("es-PE",{maximumFractionDigits:0})} MW·${granularityLabel}. Media ${kpis.media.toFixed(1)} MW, máximo ${kpis.max.toFixed(1)} MW. Top central: ${topPlant?.name ?? "—"} (${topPlant?.avg.toFixed(1) ?? "0"} MW promedio). Coef. Variación promedio: ${avgCV.toFixed(1)}% (intermittencia).` },
+        { title: "Dashboard", node: el },
+      ],
+      filename: `informe_${tech}_${new Date().toISOString().slice(0,10)}.pdf`,
+    });
+  }
+
+  function handleExportExcel() {
+    exportRowsAsExcel([
+      { name: "Serie temporal", rows: sortedDates.map((d, i) => ({ fecha: d, mw: sortedValues[i] })) },
+      { name: "Top centrales", rows: rankingCentrales.map((r) => ({ codigo: r.code, central: r.name, promedio_MW: r.avg })) },
+      { name: "Coef Variacion", rows: coefVariacion.map((r) => ({ central: r.name, CV_pct: r.cv })) },
+      { name: "Dias operacion", rows: diasActividad.map((r) => ({ central: r.name, activo: r.activo, inactivo: r.inactivo })) },
+    ], `datos_${tech}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  async function handleExportPNG() {
+    if (dashboardRef.current) await exportNodeAsPNG(dashboardRef.current, `dashboard_${tech}.png`);
+  }
+
   const granularityLabel = granularity === "day" ? "diaria" : granularity === "week" ? "semanal" : "mensual";
 
   return (
-    <div className="p-6">
+    <div className="p-6" ref={dashboardRef}>
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color }}>{TECH_LABEL[tech]}s — SEIN/COES</h1>
@@ -240,14 +403,20 @@ function TechModule() {
             {filteredPlants.length} centrales · {filteredRows.length.toLocaleString()} registros
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs">
-          <span className="uppercase tracking-widest text-slate-400">Región</span>
-          <select value={region} onChange={(e) => setRegion(e.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
-            {regions.map((r) => <option key={r ?? "n"} value={r ?? ""}>{r === "ALL" ? "Todas" : r}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs">
+            <span className="uppercase tracking-widest text-slate-400">Región</span>
+            <select value={region} onChange={(e) => setRegion(e.target.value)}
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
+              {regions.map((r) => <option key={r ?? "n"} value={r ?? ""}>{r === "ALL" ? "Todas" : r}</option>)}
+            </select>
+          </label>
+          <button onClick={handleExportPNG} className="rounded-md border border-sky-700 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20">⬇ PNG</button>
+          <button onClick={handleExportExcel} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">⬇ Excel</button>
+          <button onClick={handleExportPDF} className="rounded-md border border-amber-700 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20">📄 Informe PDF</button>
+        </div>
       </header>
+
 
       <div className="mb-4">
         <ChartControls
@@ -308,9 +477,73 @@ function TechModule() {
             </div>
           </Card>
 
-          <Card title="Heatmap mes × año (MW promedio)">
-            <Heatmap {...heatmap} color={color} />
+          <Card title={`Heatmap ${heatmapMode === "week" ? "semana × año" : "mes × año"} (MW promedio)`}>
+            <div className="mb-3 inline-flex rounded-md border border-slate-800 p-0.5 text-xs">
+              {(["month","week"] as const).map((m) => (
+                <button key={m} onClick={() => setHeatmapMode(m)}
+                  className="rounded px-3 py-1 uppercase tracking-widest"
+                  style={{ background: heatmapMode === m ? color : "transparent", color: heatmapMode === m ? "white" : "#94a3b8" }}>
+                  {m === "month" ? "Mensual" : "Semanal"}
+                </button>
+              ))}
+            </div>
+            <Heatmap {...(heatmapMode === "week" ? heatmapWeek : heatmap)} color={color} />
           </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Distribución de centrales por potencia instalada">
+              <div className="h-[260px]">
+                <Bar data={{ labels: distribucionPotencia.labels, datasets: [{ label: "N° centrales", data: distribucionPotencia.counts, backgroundColor: "#00559E" }] }} options={chartOpts()} />
+              </div>
+            </Card>
+            <Card title="Días operación activa vs inactiva (top 20 centrales)">
+              <div className="h-[260px]">
+                <Bar
+                  data={{
+                    labels: diasActividad.map((d) => d.name),
+                    datasets: [
+                      { label: "Activo", data: diasActividad.map((d) => d.activo), backgroundColor: "#00934C", stack: "s" },
+                      { label: "Inactivo", data: diasActividad.map((d) => d.inactivo), backgroundColor: "#B8261F", stack: "s" },
+                    ],
+                  }}
+                  options={{
+                    responsive: true, maintainAspectRatio: false, indexAxis: "y" as const,
+                    plugins: { legend: { labels: { color: "#cbd5e1", font: { size: 10 } } } },
+                    scales: {
+                      x: { stacked: true, ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+                      y: { stacked: true, ticks: { color: "#94a3b8", font: { size: 9 } }, grid: { color: "#1e293b" } },
+                    },
+                  }}
+                />
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Ranking · Top 15 centrales por generación (MW promedio diario)">
+              <div className="h-[320px]">
+                <Bar
+                  data={{ labels: rankingCentrales.map((r) => r.name), datasets: [{ label: "MW promedio", data: rankingCentrales.map((r) => r.avg), backgroundColor: "#00559E" }] }}
+                  options={{ ...chartOpts(), indexAxis: "y" as const }}
+                />
+              </div>
+            </Card>
+            <Card title="Coeficiente de Variación por central (mayor = más intermitente)">
+              <div className="h-[320px]">
+                <Bar
+                  data={{ labels: coefVariacion.map((r) => r.name), datasets: [{ label: "CV %", data: coefVariacion.map((r) => r.cv), backgroundColor: "#F39F30" }] }}
+                  options={{ ...chartOpts(), indexAxis: "y" as const }}
+                />
+              </div>
+            </Card>
+          </div>
+
+          <Card title="Evolución anual por central — Top 8 (promedio MW)">
+            <div className="h-[340px]">
+              <Line data={evolucionAnual} options={{ ...chartOpts(), plugins: { legend: { labels: { color: "#cbd5e1", font: { size: 10 }, boxWidth: 10 } } } }} />
+            </div>
+          </Card>
+
 
           <Card title="Detección de anomalías (fuera de ±2σ de la media móvil 30)">
             <div className="grid gap-4 lg:grid-cols-2">

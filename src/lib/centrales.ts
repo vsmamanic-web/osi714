@@ -46,13 +46,13 @@ export const TECH_LABEL: Record<Technology, string> = {
   otro: "Otro",
 };
 
-// Paleta Osinergmin Vivo por defecto.
+// Paleta Osinergmin Institucional por defecto (azul institucional + complementarios oficiales).
 export const DEFAULT_TECH_COLOR: Record<Technology, string> = {
-  hidro: "#0090D4",
-  eolico: "#00B140",
-  solar: "#FFC20E",
-  termico: "#E4002B",
-  otro: "#6C2C91",
+  hidro: "#00559E",     // azul institucional
+  eolico: "#00B6F1",    // turquesa / celeste
+  solar: "#FFD400",     // amarillo
+  termico: "#F39F30",   // naranja
+  otro: "#7DA9DD",      // celeste claro
 };
 
 export const TECH_COLOR = DEFAULT_TECH_COLOR;
@@ -378,13 +378,13 @@ export interface Palette {
 }
 
 export const DEFAULT_PALETTE: Palette = {
-  preset: "osinergmin_vivo",
-  hidro: "#0090D4",
-  eolico: "#00B140",
-  solar: "#FFC20E",
-  termico: "#E4002B",
-  otro: "#6C2C91",
-  accent: "#00B7C7",
+  preset: "osinergmin_institucional",
+  hidro: "#00559E",
+  eolico: "#00B6F1",
+  solar: "#FFD400",
+  termico: "#F39F30",
+  otro: "#7DA9DD",
+  accent: "#00559E",
 };
 
 export async function getPalette(): Promise<Palette> {
