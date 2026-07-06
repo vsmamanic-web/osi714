@@ -16,6 +16,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getLastUpdate } from "@/lib/centrales";
 import { useState, type ReactNode } from "react";
+import osiLogo from "@/assets/osinergmin-logo.png";
+
 
 const NAV = [
   { to: "/", label: "Resumen", icon: LayoutDashboard },
@@ -41,30 +43,35 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex min-h-screen bg-[#f4f7fb] text-[#0b2e5b]">
       <aside
-        className={`${open ? "w-64" : "w-16"} shrink-0 border-r border-slate-800 bg-slate-900/80 transition-all duration-200`}
+        className={`${open ? "w-64" : "w-16"} shrink-0 border-r border-slate-200 bg-white shadow-sm transition-all duration-200`}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-slate-800 px-3">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500 text-base font-bold">
-            ⚡
-          </div>
+        <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-3">
+          <img
+            src={osiLogo}
+            alt="Osinergmin"
+            width={40}
+            height={40}
+            className="h-10 w-10 shrink-0 rounded-md bg-white object-contain"
+          />
           {open && (
             <div className="leading-tight">
-              <div className="text-sm font-bold">SEIN BI</div>
-              <div className="text-[10px] uppercase tracking-widest text-sky-300">
-                Generación Perú
+              <div className="text-sm font-bold text-[#00559e]">SEIN BI</div>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-[#f39f30]">
+                Osinergmin · Perú
               </div>
             </div>
           )}
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="ml-auto rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-[#00559e]"
             aria-label="Toggle sidebar"
           >
             <FileSpreadsheet className="h-4 w-4" />
           </button>
         </div>
+
         <nav className="mt-2 flex flex-col gap-0.5 px-2">
           {NAV.map(({ to, label, icon: Icon }) => {
             const active = path === to || (to !== "/" && path.startsWith(to));
@@ -72,10 +79,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors ${
+                className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-sky-500/15 text-sky-300"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                    ? "bg-[#00559e] text-white shadow-sm"
+                    : "text-slate-600 hover:bg-[#e6f2fb] hover:text-[#00559e]"
                 }`}
                 title={label}
               >
@@ -91,13 +98,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
         {open && (
-          <div className="mx-3 mt-1 rounded-md border border-slate-800 bg-slate-950/50 p-2 text-xs">
+          <div className="mx-3 mt-1 rounded-md border border-slate-200 bg-[#f4f7fb] p-2 text-xs">
             {last ? (
               <>
-                <div className="font-semibold text-emerald-300">
+                <div className="font-semibold text-emerald-700">
                   {new Date(last.uploaded_at).toLocaleString("es-PE")}
                 </div>
-                <div className="mt-0.5 text-slate-400">
+                <div className="mt-0.5 text-slate-500">
                   {last.technology.toUpperCase()} · {last.filename ?? "—"}
                 </div>
               </>
@@ -107,7 +114,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </aside>
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="min-w-0 flex-1">
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#00559e] via-[#00b6f1] to-[#ffd400]" />
+        {children}
+      </main>
     </div>
   );
 }

@@ -2,6 +2,44 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* ============================================================
+ * Osinergmin institutional palette override.
+ * We remap Tailwind's `slate` and `sky` scales so every page
+ * that used `bg-slate-950 / text-slate-100 / bg-sky-500` etc.
+ * automatically renders on a light Osinergmin theme without
+ * having to touch each component.
+ * ============================================================ */
+@theme {
+  /* Backgrounds: dark → light */
+  --color-slate-950: #f4f7fb;  /* app bg */
+  --color-slate-900: #ffffff;  /* card / sidebar bg */
+  --color-slate-800: #e2e8f0;  /* borders / dividers */
+  --color-slate-700: #cbd5e1;
+  --color-slate-600: #94a3b8;
+  --color-slate-500: #64748b;
+  /* Text: light → dark */
+  --color-slate-400: #475569;  /* muted text */
+  --color-slate-300: #334155;
+  --color-slate-200: #1e293b;
+  --color-slate-100: #0b2e5b;  /* primary text (Osinergmin dark blue) */
+  --color-slate-50:  #001a3a;
+
+  /* Accent / brand — Osinergmin blue + yellow */
+  --color-sky-500: #00559e;
+  --color-sky-400: #00b6f1;
+  --color-sky-300: #007ac2;
+  --color-sky-600: #003f75;
+  --color-sky-200: #cfe6f7;
+  --color-sky-100: #e6f2fb;
+
+  --color-osi-blue: #00559e;
+  --color-osi-cyan: #00b6f1;
+  --color-osi-yellow: #ffd400;
+  --color-osi-orange: #f39f30;
+}
+
+
+
 @custom-variant dark (&:is(.dark *));
 
 /*
