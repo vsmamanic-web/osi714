@@ -57,9 +57,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           />
           {open && (
             <div className="leading-tight">
-              <div className="text-sm font-bold text-[#00559e]">SEIN BI</div>
+              <div className="text-sm font-bold text-[#00559e]">Osinergmin · Perú</div>
               <div className="text-[10px] font-semibold uppercase tracking-widest text-[#f39f30]">
-                Osinergmin · Perú
+                SEIN BI
               </div>
             </div>
           )}
