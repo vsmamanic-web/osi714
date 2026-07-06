@@ -79,10 +79,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors ${
+                className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-sky-500/15 text-sky-300"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                    ? "bg-[#00559e] text-white shadow-sm"
+                    : "text-slate-600 hover:bg-[#e6f2fb] hover:text-[#00559e]"
                 }`}
                 title={label}
               >
