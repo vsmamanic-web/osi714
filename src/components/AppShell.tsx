@@ -43,30 +43,35 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex min-h-screen bg-[#f4f7fb] text-[#0b2e5b]">
       <aside
-        className={`${open ? "w-64" : "w-16"} shrink-0 border-r border-slate-800 bg-slate-900/80 transition-all duration-200`}
+        className={`${open ? "w-64" : "w-16"} shrink-0 border-r border-slate-200 bg-white shadow-sm transition-all duration-200`}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-slate-800 px-3">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500 text-base font-bold">
-            ⚡
-          </div>
+        <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-3">
+          <img
+            src={osiLogo}
+            alt="Osinergmin"
+            width={40}
+            height={40}
+            className="h-10 w-10 shrink-0 rounded-md bg-white object-contain"
+          />
           {open && (
             <div className="leading-tight">
-              <div className="text-sm font-bold">SEIN BI</div>
-              <div className="text-[10px] uppercase tracking-widest text-sky-300">
-                Generación Perú
+              <div className="text-sm font-bold text-[#00559e]">SEIN BI</div>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-[#f39f30]">
+                Osinergmin · Perú
               </div>
             </div>
           )}
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="ml-auto rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-[#00559e]"
             aria-label="Toggle sidebar"
           >
             <FileSpreadsheet className="h-4 w-4" />
           </button>
         </div>
+
         <nav className="mt-2 flex flex-col gap-0.5 px-2">
           {NAV.map(({ to, label, icon: Icon }) => {
             const active = path === to || (to !== "/" && path.startsWith(to));
