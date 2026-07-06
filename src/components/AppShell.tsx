@@ -98,13 +98,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
         {open && (
-          <div className="mx-3 mt-1 rounded-md border border-slate-800 bg-slate-950/50 p-2 text-xs">
+          <div className="mx-3 mt-1 rounded-md border border-slate-200 bg-[#f4f7fb] p-2 text-xs">
             {last ? (
               <>
-                <div className="font-semibold text-emerald-300">
+                <div className="font-semibold text-emerald-700">
                   {new Date(last.uploaded_at).toLocaleString("es-PE")}
                 </div>
-                <div className="mt-0.5 text-slate-400">
+                <div className="mt-0.5 text-slate-500">
                   {last.technology.toUpperCase()} · {last.filename ?? "—"}
                 </div>
               </>
