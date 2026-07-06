@@ -114,7 +114,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </aside>
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="min-w-0 flex-1">
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#00559e] via-[#00b6f1] to-[#ffd400]" />
+        {children}
+      </main>
     </div>
   );
 }
