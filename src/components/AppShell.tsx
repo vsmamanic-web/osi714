@@ -16,6 +16,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getLastUpdate } from "@/lib/centrales";
 import { useState, type ReactNode } from "react";
+import osiLogo from "@/assets/osinergmin-logo.png";
+
 
 const NAV = [
   { to: "/", label: "Resumen", icon: LayoutDashboard },
