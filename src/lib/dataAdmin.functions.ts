@@ -115,10 +115,16 @@ async function listSheetTitles(spreadsheetId: string): Promise<string[]> {
 }
 
 async function readSheetValues(spreadsheetId: string, title: string): Promise<string[][]> {
-  const range = `${title}!A1:ZZ200000`;
+  // Google acepta la comilla simple para nombres con espacios. Solo escapamos el título,
+  // no el `!A1:...` (los `:` no deben codificarse).
+  const escapedTitle = title.includes(" ") || /[^a-zA-Z0-9_]/.test(title)
+    ? `'${title.replace(/'/g, "''")}'`
+    : title;
+  const range = `${escapedTitle}!A1:ZZ200000`;
   const data = await gsFetch(`/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`);
   return (data?.values ?? []) as string[][];
 }
+
 
 // ---------- Parseo genérico ----------
 interface ParsedRow { plantCode: string; plantName: string; date: string; mw: number; }
