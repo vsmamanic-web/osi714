@@ -380,13 +380,28 @@ function TechModule() {
   }
 
   function handleExportExcel() {
+    const filtro = `${region === "ALL" ? "Todas" : region} · ${[...effectiveYears].sort().join(",")} · ${granularityLabel}`;
     exportRowsAsExcel([
+      { name: "Resumen", rows: [{
+        tecnologia: TECH_LABEL[tech], filtros: filtro,
+        centrales: filteredPlants.length, registros: filteredRows.length,
+        total_MW: kpis.total, media_MW: kpis.media, max_MW: kpis.max, min_MW: kpis.min,
+      }] },
       { name: "Serie temporal", rows: sortedDates.map((d, i) => ({ fecha: d, mw: sortedValues[i] })) },
       { name: "Top centrales", rows: rankingCentrales.map((r) => ({ codigo: r.code, central: r.name, promedio_MW: r.avg })) },
       { name: "Coef Variacion", rows: coefVariacion.map((r) => ({ central: r.name, CV_pct: r.cv })) },
       { name: "Dias operacion", rows: diasActividad.map((r) => ({ central: r.name, activo: r.activo, inactivo: r.inactivo })) },
+      { name: "Distribucion potencia", rows: distribucionPotencia.labels.map((l, i) => ({ rango: l, n_centrales: distribucionPotencia.counts[i] })) },
+      { name: "Heatmap mensual", rows: heatmap.cells.filter((c) => c.v != null).map((c) => ({ anio: c.y, mes: c.m, mw_promedio: c.v })) },
+      { name: "Anomalias", rows: anomalies.list.map((a) => ({ fecha: a.date, dia: a.dow, mw: a.mw, sigma: a.dev })) },
+      { name: "Centrales", rows: filteredPlants.map((p) => ({
+        codigo: p.code, nombre: p.name, empresa: p.company ?? "",
+        region: p.region ?? "", sistema: p.system, potencia_MW: p.installed_mw ?? "",
+        lat: p.lat ?? "", lng: p.lng ?? "",
+      })) },
     ], `datos_${tech}_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
+
 
   async function handleExportPNG() {
     if (dashboardRef.current) await exportNodeAsPNG(dashboardRef.current, `dashboard_${tech}.png`);
