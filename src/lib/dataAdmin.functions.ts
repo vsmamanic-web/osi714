@@ -251,11 +251,96 @@ async function insertParsedRows(
   return { inserted, plants: codeToId.size };
 }
 
-// ---------- Server functions expuestas ----------
+// ---------- Catálogo de centrales (DATOS_CENTRALES) ----------
+interface CatalogRow {
+  code: string;
+  name: string;
+  technology: "hidro" | "eolico" | "solar" | "termico" | "otro";
+  system: string;
+  company: string | null;
+  region: string | null;
+  installed_mw: number | null;
+  lat: number | null;
+  lng: number | null;
+}
 
-export const syncSheetSource = createServerFn({ method: "POST" })
-  .inputValidator((d: { key: string }) => z.object({ key: z.string().min(1) }).parse(d))
-  .handler(async ({ data }) => {
+function parseCatalogSheet(values: string[][]): CatalogRow[] {
+  if (!values || values.length < 2) return [];
+  const headerLc = values[0].map((h) => normalize(String(h ?? "")));
+  const findIdx = (aliases: string[]) => headerLc.findIndex((h) => aliases.includes(h));
+  const iCode = findIdx(COL_ALIASES.code);
+  const iName = findIdx(COL_ALIASES.name);
+  const iTech = findIdx(COL_ALIASES.tech);
+  const iSys = findIdx(COL_ALIASES.system);
+  const iCo = findIdx(COL_ALIASES.company);
+  const iReg = findIdx(COL_ALIASES.region);
+  const iInst = findIdx(COL_ALIASES.installed);
+  const iLat = findIdx(COL_ALIASES.lat);
+  const iLng = findIdx(COL_ALIASES.lng);
+  if (iCode < 0 || iName < 0) return [];
+
+  const rows: CatalogRow[] = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r] ?? [];
+    const code = String(row[iCode] ?? "").trim();
+    const name = String(row[iName] ?? "").trim();
+    if (!code || !name) continue;
+    rows.push({
+      code: code.toUpperCase().slice(0, 32),
+      name,
+      technology: iTech >= 0 ? mapTech(String(row[iTech] ?? "")) : "otro",
+      system: iSys >= 0 ? (String(row[iSys] ?? "").trim() || "SEIN") : "SEIN",
+      company: iCo >= 0 ? String(row[iCo] ?? "").trim() || null : null,
+      region: iReg >= 0 ? String(row[iReg] ?? "").trim() || null : null,
+      installed_mw: iInst >= 0 ? toNumber(row[iInst]) : null,
+      lat: iLat >= 0 ? toNumber(row[iLat]) : null,
+      lng: iLng >= 0 ? toNumber(row[iLng]) : null,
+    });
+  }
+  return rows;
+}
+
+async function upsertCatalogRows(rows: CatalogRow[]): Promise<{ updated: number }> {
+  if (!rows.length) return { updated: 0 };
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin
+    .from("plants")
+    .upsert(rows, { onConflict: "code" });
+  if (error) throw new Error(error.message);
+  return { updated: rows.length };
+}
+
+async function runSyncForSource(src: SheetSource): Promise<{
+  source: string; inserted: number; sheets: number;
+  detail: Array<{ sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string }>;
+}> {
+  const titles = await listSheetTitles(src.spreadsheetId);
+  const detail: Array<{ sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string }> = [];
+  let inserted = 0;
+  const isCatalog = src.key === "datos";
+
+  for (const title of titles) {
+    try {
+      const values = await readSheetValues(src.spreadsheetId, title);
+      if (isCatalog) {
+        const cat = parseCatalogSheet(values);
+        if (!cat.length) { detail.push({ sheet: title, status: "empty" }); continue; }
+        const { updated } = await upsertCatalogRows(cat);
+        detail.push({ sheet: title, status: "catalog", rows: updated });
+      } else {
+        const parsed = parseSheet(values);
+        if (!parsed.length) { detail.push({ sheet: title, status: "empty" }); continue; }
+        const r = await insertParsedRows(src, title, parsed);
+        inserted += r.inserted;
+        detail.push({ sheet: title, status: "ok", rows: r.inserted });
+      }
+    } catch (err) {
+      detail.push({ sheet: title, status: "error", message: (err as Error).message });
+    }
+  }
+  return { source: src.label, inserted, sheets: titles.length, detail };
+}
+
     const src = SHEETS_SOURCES.find((s) => s.key === data.key);
     if (!src) throw new Error(`Fuente desconocida: ${data.key}`);
     const titles = await listSheetTitles(src.spreadsheetId);
