@@ -15,9 +15,11 @@ import {
   syncAllSources,
   revertUploadAdmin,
   wipeAllMeasurements,
+  resetAndSyncAll,
   getDataStats,
 } from "@/lib/dataAdmin.functions";
 import { toast, Toaster } from "sonner";
+
 
 export const Route = createFileRoute("/cargar")({
   head: () => ({ meta: [{ title: "Sincronización de datos — SEIN BI" }] }),
