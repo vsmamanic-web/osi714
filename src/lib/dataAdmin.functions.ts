@@ -341,31 +341,16 @@ async function runSyncForSource(src: SheetSource): Promise<{
   return { source: src.label, inserted, sheets: titles.length, detail };
 }
 
+// ---------- Server functions expuestas ----------
+
+export const syncSheetSource = createServerFn({ method: "POST" })
+  .inputValidator((d: { key: string }) => z.object({ key: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
     const src = SHEETS_SOURCES.find((s) => s.key === data.key);
     if (!src) throw new Error(`Fuente desconocida: ${data.key}`);
-    const titles = await listSheetTitles(src.spreadsheetId);
-    if (!titles.length) throw new Error(`No se encontraron pestañas en ${src.label}. Verifica permisos del Google Sheet.`);
-
-    const detail: Array<{ sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string }> = [];
-    let totalInserted = 0;
-
-    for (const title of titles) {
-      try {
-        const values = await readSheetValues(src.spreadsheetId, title);
-        const parsed = parseSheet(values);
-        if (!parsed.length) {
-          detail.push({ sheet: title, status: "empty" });
-          continue;
-        }
-        const { inserted } = await insertParsedRows(src, title, parsed);
-        totalInserted += inserted;
-        detail.push({ sheet: title, status: "ok", rows: inserted });
-      } catch (err) {
-        detail.push({ sheet: title, status: "error", message: (err as Error).message });
-      }
-    }
-
-    return { source: src.label, inserted: totalInserted, sheets: titles.length, detail };
+    const result = await runSyncForSource(src);
+    if (!result.sheets) throw new Error(`No se encontraron pestañas en ${src.label}. Verifica permisos del Google Sheet.`);
+    return result;
   });
 
 export const syncAllSources = createServerFn({ method: "POST" }).handler(async () => {
@@ -373,29 +358,51 @@ export const syncAllSources = createServerFn({ method: "POST" }).handler(async (
   let total = 0;
   for (const src of SHEETS_SOURCES) {
     try {
-      const titles = await listSheetTitles(src.spreadsheetId);
-      const detail: Array<{ sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string }> = [];
-      let inserted = 0;
-      for (const title of titles) {
-        try {
-          const values = await readSheetValues(src.spreadsheetId, title);
-          const parsed = parseSheet(values);
-          if (!parsed.length) { detail.push({ sheet: title, status: "empty" }); continue; }
-          const r = await insertParsedRows(src, title, parsed);
-          inserted += r.inserted;
-          detail.push({ sheet: title, status: "ok", rows: r.inserted });
-        } catch (err) {
-          detail.push({ sheet: title, status: "error", message: (err as Error).message });
-        }
-      }
-      all.push({ source: src.label, inserted, sheets: titles.length, detail });
-      total += inserted;
+      const r = await runSyncForSource(src);
+      all.push(r);
+      total += r.inserted;
     } catch (err) {
-      all.push({ source: src.label, inserted: 0, sheets: 0, detail: [{ sheet: "-", status: "error", message: (err as Error).message }] });
+      all.push({
+        source: src.label, inserted: 0, sheets: 0,
+        detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
+      });
     }
   }
   return { total, sources: all };
 });
+
+async function wipeAllInternal() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error: e1, count: mCount } = await supabaseAdmin
+    .from("measurements").delete({ count: "exact" }).neq("plant_id", "00000000-0000-0000-0000-000000000000");
+  if (e1) throw new Error(e1.message);
+  const { error: e2, count: uCount } = await supabaseAdmin
+    .from("data_uploads").delete({ count: "exact" }).neq("id", "00000000-0000-0000-0000-000000000000");
+  if (e2) throw new Error(e2.message);
+  return { measurementsDeleted: mCount ?? 0, uploadsDeleted: uCount ?? 0 };
+}
+
+export const resetAndSyncAll = createServerFn({ method: "POST" })
+  .inputValidator((d: { confirm: string }) => z.object({ confirm: z.literal("BORRAR TODO") }).parse(d))
+  .handler(async () => {
+    const wiped = await wipeAllInternal();
+    const all: Array<{ source: string; inserted: number; sheets: number; detail: any[] }> = [];
+    let total = 0;
+    for (const src of SHEETS_SOURCES) {
+      try {
+        const r = await runSyncForSource(src);
+        all.push(r);
+        total += r.inserted;
+      } catch (err) {
+        all.push({
+          source: src.label, inserted: 0, sheets: 0,
+          detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
+        });
+      }
+    }
+    return { wiped, total, sources: all };
+  });
+
 
 export const revertUploadAdmin = createServerFn({ method: "POST" })
   .inputValidator((d: { uploadId: string }) => z.object({ uploadId: z.string().uuid() }).parse(d))
