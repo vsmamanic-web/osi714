@@ -15,7 +15,7 @@ import {
 } from "@/lib/centrales";
 import { macrozoneOf, MACROZONES, MACROZONE_COLOR, type Macrozone } from "@/lib/macrozones";
 import { forecastCurrentYear } from "@/lib/forecasting";
-import { exportReportPDF } from "@/lib/exportReport";
+import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
 import { Line } from "react-chartjs-2";
 import {
   BarElement,
@@ -135,9 +135,34 @@ function MacrozoneBlock() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, [...effectiveYears].join(","), granularity, plantZone]);
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const handleExcel = () => exportRowsAsExcel([{
+    name: "Macrozona",
+    rows: chart.labels.flatMap((lb, i) => chart.datasets.map((ds) => ({
+      periodo: lb, serie: ds.label, mw: ds.data[i],
+    }))),
+  }], `macrozona_${tech}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, `macrozona_${tech}.png`); };
+  const handlePDF = async () => {
+    if (!secRef.current) return;
+    await exportReportPDF({
+      title: `Comparativo por macrozona · ${TECH_LABEL[tech]}`,
+      subtitle: `Granularidad ${granularity} · Años ${[...effectiveYears].sort().join(",")}`,
+      sections: [{ title: "Macrozonas", node: secRef.current }],
+      filename: `macrozona_${tech}_${new Date().toISOString().slice(0,10)}.pdf`,
+    });
+  };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">🌎 Comparativo por macrozona</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">🌎 Comparativo por macrozona</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20">⬇ PNG</button>
+          <button onClick={handleExcel} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20">⬇ Excel</button>
+          <button onClick={handlePDF} className="rounded-md border border-amber-700 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/20">📄 PDF</button>
+        </div>
+      </div>
       <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-xs">
@@ -182,6 +207,7 @@ function MacrozoneBlock() {
   );
 }
 
+
 // -------------------------- Bloque Pronóstico y Riesgo --------------------------
 function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; name: string; technology: string; system: string }> }) {
   const [plantId, setPlantId] = useState<string>("");
@@ -215,9 +241,25 @@ function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; n
   const overallRisk = riskCounts ? (riskCounts.alto >= 3 ? "Alto" : riskCounts.alto + riskCounts.medio >= 4 ? "Medio" : "Bajo") : "—";
   const riskColor = overallRisk === "Alto" ? "#B8261F" : overallRisk === "Medio" ? "#F39F30" : "#00934C";
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const handleExcel = () => {
+    if (!forecast || !p) return;
+    const M = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    exportRowsAsExcel([{ name: "Pronostico", rows: M.map((mo, i) => ({
+      mes: mo, historico_mw: forecast.histAvg[i], pronostico_mw: forecast.forecast[i] ?? null, riesgo: forecast.risk[i],
+    })) }], `pronostico_${p.code}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, `pronostico_${p?.code ?? "central"}.png`); };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">🔮 Detección de bajas y pronóstico</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">🔮 Detección de bajas y pronóstico</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} disabled={!forecast} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40">⬇ PNG</button>
+          <button onClick={handleExcel} disabled={!forecast} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">⬇ Excel</button>
+        </div>
+      </div>
       <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <select value={plantId} onChange={(e) => setPlantId(e.target.value)}
@@ -232,6 +274,7 @@ function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; n
             </div>
           )}
         </div>
+
         {forecast && p ? (
           <>
             <div className="h-[320px]">
@@ -338,9 +381,29 @@ function SinglePlantBlock({ plants }: { plants: Array<{ id: string; code: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meas, [...effectiveYears].join(",")]);
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const selectedPlant = plants.find((p) => p.id === plantId);
+  const handleExcel = () => {
+    if (!chart.labels.length) return;
+    exportRowsAsExcel([{
+      name: "Serie",
+      rows: chart.labels.flatMap((lb, i) => chart.datasets.map((ds) => ({
+        periodo: lb, anio: ds.label, mw: ds.data[i],
+      }))),
+    }], `central_${selectedPlant?.code ?? "sel"}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, `central_${selectedPlant?.code ?? "sel"}.png`); };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">1. Una central · varios años</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">1. Una central · varios años</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} disabled={!meas.length} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40">⬇ PNG</button>
+          <button onClick={handleExcel} disabled={!meas.length} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">⬇ Excel</button>
+        </div>
+      </div>
+
       <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[280px]">
@@ -493,9 +556,28 @@ function MultiPlantBlock({ plants }: { plants: Array<{ id: string; code: string;
     !pickerFilter || `${p.code} ${p.name}`.toLowerCase().includes(pickerFilter.toLowerCase()),
   );
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const handleExcel = () => {
+    if (!chart.labels.length) return;
+    exportRowsAsExcel([{
+      name: "Multi-central",
+      rows: chart.labels.flatMap((lb, i) => chart.datasets.map((ds) => ({
+        periodo: lb, anio: ds.label, mw_promedio: ds.data[i],
+      }))),
+    }], `multicentral_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, "multicentral.png"); };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">2. Varias centrales · promedio anual</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">2. Varias centrales · promedio anual</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} disabled={!meas.length} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40">⬇ PNG</button>
+          <button onClick={handleExcel} disabled={!meas.length} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">⬇ Excel</button>
+        </div>
+      </div>
+
       <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[280px]">

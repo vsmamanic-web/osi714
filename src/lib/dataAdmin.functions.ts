@@ -30,6 +30,13 @@ const COL_ALIASES = {
   name: ["nombre", "name", "central", "planta"],
   date: ["fecha", "date", "dia", "día"],
   mw:   ["mw", "potencia", "valor", "generacion", "generación", "energia", "energía"],
+  tech: ["tecnologia", "tecnología", "technology", "tec"],
+  system: ["sistema", "system", "sist"],
+  company: ["empresa", "company", "titular", "operador"],
+  region: ["region", "región", "departamento", "depto"],
+  installed: ["potencia_instalada_mw", "potencia_instalada", "instalada_mw", "mw_instalado", "capacidad_mw"],
+  lat: ["lat", "latitud", "latitude"],
+  lng: ["lng", "lon", "long", "longitud", "longitude"],
 };
 
 function normalize(s: string): string {
@@ -54,10 +61,30 @@ function toISO(v: unknown): string | null {
 function toNumber(v: unknown): number | null {
   if (v == null || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const cleaned = String(v).replace(/\s/g, "").replace(",", ".");
-  const n = parseFloat(cleaned);
+  let s = String(v).replace(/\s/g, "").replace(/[^\d,.\-+eE]/g, "");
+  if (!s) return null;
+  const hasDot = s.includes(".");
+  const hasComma = s.includes(",");
+  if (hasDot && hasComma) {
+    // Formato "1,234.56" — coma = miles, punto = decimal
+    s = s.replace(/,/g, "");
+  } else if (hasComma && !hasDot) {
+    // Solo coma → decimal (formato europeo)
+    s = s.replace(/,/g, ".");
+  }
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
 }
+
+function mapTech(v: string): "hidro" | "eolico" | "solar" | "termico" | "otro" {
+  const s = normalize(v);
+  if (s.startsWith("hidro")) return "hidro";
+  if (s.startsWith("eol") || s.startsWith("eól")) return "eolico";
+  if (s.startsWith("sol")) return "solar";
+  if (s.startsWith("term") || s.startsWith("térm")) return "termico";
+  return "otro";
+}
+
 
 // ---------- Google Sheets vía Lovable Gateway ----------
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
@@ -88,10 +115,16 @@ async function listSheetTitles(spreadsheetId: string): Promise<string[]> {
 }
 
 async function readSheetValues(spreadsheetId: string, title: string): Promise<string[][]> {
-  const range = `${title}!A1:ZZ200000`;
+  // Google acepta la comilla simple para nombres con espacios. Solo escapamos el título,
+  // no el `!A1:...` (los `:` no deben codificarse).
+  const escapedTitle = title.includes(" ") || /[^a-zA-Z0-9_]/.test(title)
+    ? `'${title.replace(/'/g, "''")}'`
+    : title;
+  const range = `${escapedTitle}!A1:ZZ200000`;
   const data = await gsFetch(`/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`);
   return (data?.values ?? []) as string[][];
 }
+
 
 // ---------- Parseo genérico ----------
 interface ParsedRow { plantCode: string; plantName: string; date: string; mw: number; }
@@ -218,6 +251,96 @@ async function insertParsedRows(
   return { inserted, plants: codeToId.size };
 }
 
+// ---------- Catálogo de centrales (DATOS_CENTRALES) ----------
+interface CatalogRow {
+  code: string;
+  name: string;
+  technology: "hidro" | "eolico" | "solar" | "termico" | "otro";
+  system: string;
+  company: string | null;
+  region: string | null;
+  installed_mw: number | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+function parseCatalogSheet(values: string[][]): CatalogRow[] {
+  if (!values || values.length < 2) return [];
+  const headerLc = values[0].map((h) => normalize(String(h ?? "")));
+  const findIdx = (aliases: string[]) => headerLc.findIndex((h) => aliases.includes(h));
+  const iCode = findIdx(COL_ALIASES.code);
+  const iName = findIdx(COL_ALIASES.name);
+  const iTech = findIdx(COL_ALIASES.tech);
+  const iSys = findIdx(COL_ALIASES.system);
+  const iCo = findIdx(COL_ALIASES.company);
+  const iReg = findIdx(COL_ALIASES.region);
+  const iInst = findIdx(COL_ALIASES.installed);
+  const iLat = findIdx(COL_ALIASES.lat);
+  const iLng = findIdx(COL_ALIASES.lng);
+  if (iCode < 0 || iName < 0) return [];
+
+  const rows: CatalogRow[] = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r] ?? [];
+    const code = String(row[iCode] ?? "").trim();
+    const name = String(row[iName] ?? "").trim();
+    if (!code || !name) continue;
+    rows.push({
+      code: code.toUpperCase().slice(0, 32),
+      name,
+      technology: iTech >= 0 ? mapTech(String(row[iTech] ?? "")) : "otro",
+      system: iSys >= 0 ? (String(row[iSys] ?? "").trim() || "SEIN") : "SEIN",
+      company: iCo >= 0 ? String(row[iCo] ?? "").trim() || null : null,
+      region: iReg >= 0 ? String(row[iReg] ?? "").trim() || null : null,
+      installed_mw: iInst >= 0 ? toNumber(row[iInst]) : null,
+      lat: iLat >= 0 ? toNumber(row[iLat]) : null,
+      lng: iLng >= 0 ? toNumber(row[iLng]) : null,
+    });
+  }
+  return rows;
+}
+
+async function upsertCatalogRows(rows: CatalogRow[]): Promise<{ updated: number }> {
+  if (!rows.length) return { updated: 0 };
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin
+    .from("plants")
+    .upsert(rows, { onConflict: "code" });
+  if (error) throw new Error(error.message);
+  return { updated: rows.length };
+}
+
+async function runSyncForSource(src: SheetSource): Promise<{
+  source: string; inserted: number; sheets: number;
+  detail: Array<{ sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string }>;
+}> {
+  const titles = await listSheetTitles(src.spreadsheetId);
+  const detail: Array<{ sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string }> = [];
+  let inserted = 0;
+  const isCatalog = src.key === "datos";
+
+  for (const title of titles) {
+    try {
+      const values = await readSheetValues(src.spreadsheetId, title);
+      if (isCatalog) {
+        const cat = parseCatalogSheet(values);
+        if (!cat.length) { detail.push({ sheet: title, status: "empty" }); continue; }
+        const { updated } = await upsertCatalogRows(cat);
+        detail.push({ sheet: title, status: "catalog", rows: updated });
+      } else {
+        const parsed = parseSheet(values);
+        if (!parsed.length) { detail.push({ sheet: title, status: "empty" }); continue; }
+        const r = await insertParsedRows(src, title, parsed);
+        inserted += r.inserted;
+        detail.push({ sheet: title, status: "ok", rows: r.inserted });
+      }
+    } catch (err) {
+      detail.push({ sheet: title, status: "error", message: (err as Error).message });
+    }
+  }
+  return { source: src.label, inserted, sheets: titles.length, detail };
+}
+
 // ---------- Server functions expuestas ----------
 
 export const syncSheetSource = createServerFn({ method: "POST" })
@@ -225,29 +348,9 @@ export const syncSheetSource = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const src = SHEETS_SOURCES.find((s) => s.key === data.key);
     if (!src) throw new Error(`Fuente desconocida: ${data.key}`);
-    const titles = await listSheetTitles(src.spreadsheetId);
-    if (!titles.length) throw new Error(`No se encontraron pestañas en ${src.label}. Verifica permisos del Google Sheet.`);
-
-    const detail: Array<{ sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string }> = [];
-    let totalInserted = 0;
-
-    for (const title of titles) {
-      try {
-        const values = await readSheetValues(src.spreadsheetId, title);
-        const parsed = parseSheet(values);
-        if (!parsed.length) {
-          detail.push({ sheet: title, status: "empty" });
-          continue;
-        }
-        const { inserted } = await insertParsedRows(src, title, parsed);
-        totalInserted += inserted;
-        detail.push({ sheet: title, status: "ok", rows: inserted });
-      } catch (err) {
-        detail.push({ sheet: title, status: "error", message: (err as Error).message });
-      }
-    }
-
-    return { source: src.label, inserted: totalInserted, sheets: titles.length, detail };
+    const result = await runSyncForSource(src);
+    if (!result.sheets) throw new Error(`No se encontraron pestañas en ${src.label}. Verifica permisos del Google Sheet.`);
+    return result;
   });
 
 export const syncAllSources = createServerFn({ method: "POST" }).handler(async () => {
@@ -255,29 +358,51 @@ export const syncAllSources = createServerFn({ method: "POST" }).handler(async (
   let total = 0;
   for (const src of SHEETS_SOURCES) {
     try {
-      const titles = await listSheetTitles(src.spreadsheetId);
-      const detail: Array<{ sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string }> = [];
-      let inserted = 0;
-      for (const title of titles) {
-        try {
-          const values = await readSheetValues(src.spreadsheetId, title);
-          const parsed = parseSheet(values);
-          if (!parsed.length) { detail.push({ sheet: title, status: "empty" }); continue; }
-          const r = await insertParsedRows(src, title, parsed);
-          inserted += r.inserted;
-          detail.push({ sheet: title, status: "ok", rows: r.inserted });
-        } catch (err) {
-          detail.push({ sheet: title, status: "error", message: (err as Error).message });
-        }
-      }
-      all.push({ source: src.label, inserted, sheets: titles.length, detail });
-      total += inserted;
+      const r = await runSyncForSource(src);
+      all.push(r);
+      total += r.inserted;
     } catch (err) {
-      all.push({ source: src.label, inserted: 0, sheets: 0, detail: [{ sheet: "-", status: "error", message: (err as Error).message }] });
+      all.push({
+        source: src.label, inserted: 0, sheets: 0,
+        detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
+      });
     }
   }
   return { total, sources: all };
 });
+
+async function wipeAllInternal() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error: e1, count: mCount } = await supabaseAdmin
+    .from("measurements").delete({ count: "exact" }).neq("plant_id", "00000000-0000-0000-0000-000000000000");
+  if (e1) throw new Error(e1.message);
+  const { error: e2, count: uCount } = await supabaseAdmin
+    .from("data_uploads").delete({ count: "exact" }).neq("id", "00000000-0000-0000-0000-000000000000");
+  if (e2) throw new Error(e2.message);
+  return { measurementsDeleted: mCount ?? 0, uploadsDeleted: uCount ?? 0 };
+}
+
+export const resetAndSyncAll = createServerFn({ method: "POST" })
+  .inputValidator((d: { confirm: string }) => z.object({ confirm: z.literal("BORRAR TODO") }).parse(d))
+  .handler(async () => {
+    const wiped = await wipeAllInternal();
+    const all: Array<{ source: string; inserted: number; sheets: number; detail: any[] }> = [];
+    let total = 0;
+    for (const src of SHEETS_SOURCES) {
+      try {
+        const r = await runSyncForSource(src);
+        all.push(r);
+        total += r.inserted;
+      } catch (err) {
+        all.push({
+          source: src.label, inserted: 0, sheets: 0,
+          detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
+        });
+      }
+    }
+    return { wiped, total, sources: all };
+  });
+
 
 export const revertUploadAdmin = createServerFn({ method: "POST" })
   .inputValidator((d: { uploadId: string }) => z.object({ uploadId: z.string().uuid() }).parse(d))

@@ -15,9 +15,11 @@ import {
   syncAllSources,
   revertUploadAdmin,
   wipeAllMeasurements,
+  resetAndSyncAll,
   getDataStats,
 } from "@/lib/dataAdmin.functions";
 import { toast, Toaster } from "sonner";
+
 
 export const Route = createFileRoute("/cargar")({
   head: () => ({ meta: [{ title: "Sincronización de datos — SEIN BI" }] }),
@@ -80,15 +82,20 @@ function StatsBar() {
   );
 }
 
-interface DetailRow { source: string; sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string; }
+interface DetailRow { source: string; sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string; }
+
+
 
 function SheetsSyncPanel() {
   const qc = useQueryClient();
   const syncOne = useServerFn(syncSheetSource);
   const syncAll = useServerFn(syncAllSources);
+  const resetSync = useServerFn(resetAndSyncAll);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<DetailRow[]>([]);
   const [totalInserted, setTotalInserted] = useState(0);
+  const [showReset, setShowReset] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
 
   async function handleSyncOne(key: string) {
     const src = SHEETS_SOURCES.find((s) => s.key === key);
@@ -120,6 +127,24 @@ function SheetsSyncPanel() {
     } finally { setBusy(null); }
   }
 
+  async function handleResetAndSync() {
+    if (resetConfirm !== "BORRAR TODO") { toast.error('Debes escribir exactamente "BORRAR TODO".'); return; }
+    setBusy("__reset__"); setLog([]); setTotalInserted(0);
+    try {
+      const res = await resetSync({ data: { confirm: "BORRAR TODO" } });
+      setTotalInserted(res.total);
+      const flat: DetailRow[] = [];
+      for (const s of res.sources) for (const d of s.detail) flat.push({ source: s.source, ...d });
+      setLog(flat);
+      toast.success(`Borrado (${res.wiped.measurementsDeleted.toLocaleString()} medic.) + Sincronización: ${res.total.toLocaleString()} nuevas.`);
+      setShowReset(false); setResetConfirm("");
+      qc.invalidateQueries();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally { setBusy(null); }
+  }
+
+
   return (
     <div className="space-y-4">
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -128,13 +153,48 @@ function SheetsSyncPanel() {
             <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-500">Fuentes oficiales de datos</h2>
             <p className="text-xs text-slate-500">Los libros se leen con tu conexión Google autorizada. Pestañas detectadas automáticamente.</p>
           </div>
-          <button
-            disabled={!!busy}
-            onClick={handleSyncAll}
-            className="rounded-lg bg-[#00559E] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#004585] disabled:opacity-50">
-            {busy === "__all__" ? "⏳ Sincronizando todo…" : "🔄 Sincronizar todo"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              disabled={!!busy}
+              onClick={handleSyncAll}
+              className="rounded-lg bg-[#00559E] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#004585] disabled:opacity-50">
+              {busy === "__all__" ? "⏳ Sincronizando todo…" : "🔄 Sincronizar todo"}
+            </button>
+            <button
+              disabled={!!busy}
+              onClick={() => setShowReset((v) => !v)}
+              className="rounded-lg border-2 border-rose-500 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-50 disabled:opacity-50">
+              🔁 Borrar TODO y re-sincronizar
+            </button>
+          </div>
         </div>
+        {showReset && (
+          <div className="mb-3 rounded-lg border-2 border-rose-300 bg-rose-50 p-3">
+            <p className="mb-2 text-sm text-rose-800">
+              Se eliminarán <b>todas las mediciones e historial</b> antes de re-descargar los datos oficiales.
+              Escribe <code className="rounded bg-white px-1 font-bold">BORRAR TODO</code> para confirmar:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                placeholder="BORRAR TODO"
+                className="flex-1 min-w-[200px] rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              <button
+                disabled={busy === "__reset__" || resetConfirm !== "BORRAR TODO"}
+                onClick={handleResetAndSync}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+                {busy === "__reset__" ? "⏳ Procesando…" : "Confirmar reinicio"}
+              </button>
+              <button
+                onClick={() => { setShowReset(false); setResetConfirm(""); }}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-2 md:grid-cols-2">
           {SHEETS_SOURCES.map((s) => (
             <div key={s.key} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -176,9 +236,13 @@ function SheetsSyncPanel() {
                   <tr key={i} className="border-t border-slate-100">
                     <td className="px-2 py-1">{p.source}</td>
                     <td className="px-2 py-1 font-mono">{p.sheet}</td>
-                    <td className={`px-2 py-1 ${p.status === "ok" ? "text-emerald-600" : p.status === "empty" ? "text-slate-400" : "text-rose-600"}`}>
-                      {p.status === "ok" ? "✓ OK" : p.status === "empty" ? "vacía" : `✗ ${p.message ?? "error"}`}
+                    <td className={`px-2 py-1 ${p.status === "ok" ? "text-emerald-600" : p.status === "catalog" ? "text-indigo-600" : p.status === "empty" ? "text-slate-400" : "text-rose-600"}`}>
+                      {p.status === "ok" ? "✓ OK"
+                        : p.status === "catalog" ? "◆ Catálogo actualizado"
+                        : p.status === "empty" ? "vacía"
+                        : `✗ ${p.message ?? "error"}`}
                     </td>
+
                     <td className="px-2 py-1 text-right tabular-nums">{p.rows?.toLocaleString() ?? "—"}</td>
                   </tr>
                 ))}

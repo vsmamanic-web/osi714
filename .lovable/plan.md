@@ -1,47 +1,63 @@
-## Problema actual
+## Contexto
 
-- La sincronización desde Google Sheets (`src/lib/sheetsSync.ts`) llama a `gviz` desde el navegador: los libros deben ser 100% públicos, adivina nombres de pestañas ("2020"…año actual, "Hoja1") y las escrituras a la base van con el cliente del navegador. Como las políticas RLS exigen `auth.uid() IS NOT NULL` para INSERT/DELETE y no hay sesión iniciada, **la sincronización y la reversión fallan en silencio**. Por eso "Revertir" no borra nada.
-- No existe un botón para eliminar todas las mediciones cargadas.
+- El conector Google Sheets (VANESA) sigue vinculado y funcional.
+- Los 7 spreadsheets responden correctamente y la mayoría usa formato largo `codigo | nombre | fecha | mw`.
+- Base actual: 196 mediciones + `data_uploads` residuales — a borrar antes de re-sincronizar.
 
-## Solución
+## Bugs detectados al re-inspeccionar los libros
 
-### 1. Conectar Google Sheets vía OAuth
-Vinculo el conector oficial `google_sheets` (una sola vez, con tu cuenta Google). Ya no importa si las hojas son públicas o privadas.
+1. **Parser numérico corrompe MW**: los valores llegan con coma de miles (`"2,667.35"`). `toNumber` hace `.replace(",", ".")` → convierte `"2,667.35"` en `"2.667.35"` → parsea como `2.667`. Toda la sincronización previa quedó dividida por ~1000. Fix: `.replace(/,/g, "")` para eliminar comas de miles.
+2. **DATOS_CENTRALES no se importa**: es un catálogo de centrales (columnas `codigo, nombre, tecnologia, sistema, empresa, region, potencia_instalada_mw, lat, lng, zona`). El parser genérico devuelve vacío porque no hay `fecha`. Se debe procesar en modo catálogo para enriquecer la tabla `plants` (región, potencia, lat/lng, empresa, tecnología correcta).
+3. **Pestañas con espacio** (`"Hoja 1"` en CENTRALES_TERMICAS): el rango se envía sin escapar, funciona por accidente en Google. Añado `encodeURIComponent` solo al segmento del rango.
 
-### 2. Mover Sheets + escrituras a Server Functions (con admin)
-Creo `src/lib/dataAdmin.functions.ts` con TanStack `createServerFn` (bypass RLS con `supabaseAdmin`):
+## Cambios
 
-- `syncSheetSource({ key })` — enumera pestañas reales del libro con `GET /v4/spreadsheets/{id}?fields=sheets.properties.title`, descarga cada una con `values/{sheet}!A1:Z100000`, parsea (formato largo `codigo,fecha,mw` y formato ancho `fecha + una col por central`), upserta centrales por código y hace insert de mediciones con `upload_id`. Devuelve progreso por pestaña.
-- `syncAllSheetSources()` — recorre las 7 fuentes.
-- `revertUploadAdmin({ uploadId })` — elimina mediciones por `upload_id` y marca `reverted_at`. Funciona siempre (bypass RLS).
-- `wipeAllMeasurements({ confirm: "BORRAR TODO" })` — TRUNCATE `measurements` + `data_uploads`. **No** toca `plants` (catálogo se conserva).
-- `wipeTechnologyMeasurements({ technology })` — opcional futuro.
+### 1. `src/lib/dataAdmin.functions.ts`
 
-Las llamadas al conector usan el gateway:
-```
-https://connector-gateway.lovable.dev/google_sheets/v4/spreadsheets/{id}/...
-Authorization: Bearer $LOVABLE_API_KEY
-X-Connection-Api-Key: $GOOGLE_SHEETS_API_KEY
-```
+- **`toNumber` corregido**: eliminar comas de miles; solo tratar `,` como decimal si no hay `.`.
+- **`parseCatalogSheet`** (nueva): para `DATOS_CENTRALES` — mapea `tecnologia → technology` (HIDROELÉCTRICA→hidro, EÓLICA→eolico, SOLAR→solar, TÉRMICA→termico), extrae `system, company, region, installed_mw, lat, lng` y hace upsert por `code` en `plants` (no toca `measurements`).
+- **`syncSheetSource`** ramifica: si `key === "datos"` → parseo catálogo; resto → parseo mediciones actual (con `toNumber` arreglado).
+- **`readSheetValues`**: escapar solo el segmento del rango, no el `!A1:ZZ...`.
+- **Nueva server fn `resetAndSyncAll`** (opcional pero útil): en un solo click hace `wipeAllMeasurements` → luego `syncAllSources`. Devuelve resumen combinado.
 
-### 3. Rediseño de la pestaña "Historial / Revertir" en `/cargar`
-- Botones de sincronización llaman a las nuevas server fns con `useServerFn` (progreso en vivo).
-- Botón **"Revertir"** por carga ahora usa `revertUploadAdmin` (funciona).
-- Nueva zona de peligro con botón **"Borrar TODOS los datos cargados"** (doble confirmación: modal + escribir "BORRAR TODO"). Elimina mediciones y cargas; mantiene el catálogo de centrales.
-- Añado indicador global: total de mediciones y última sincronización.
+### 2. `src/routes/cargar.tsx` — pestaña Sincronizar
 
-### 4. Limpieza
-- `src/lib/sheetsSync.ts` (browser) queda como thin wrapper que solo re-exporta `SHEETS_SOURCES` y llama a la server fn.
-- El botón "Sincronizar todo" y por-fuente pasan al mismo flujo server-side.
-- Sin cambios de esquema en la base de datos.
+- Botón nuevo: **"🔁 Borrar TODO y re-sincronizar"** (con doble confirmación "BORRAR TODO"), que llama a `resetAndSyncAll`.
+- Se conserva el botón "Sincronizar todo" y los individuales.
+- Log muestra fila especial para DATOS_CENTRALES con "N centrales actualizadas".
+
+### 3. Descargas por sección (PDF / PNG / Excel)
+
+Objetivo: que cada botón exporte **exactamente lo que está a la vista**, no un dataset global.
+
+- **`src/routes/tecnologia.$tech.tsx`**:
+  - Excel actual ya usa las series filtradas (bien). Añado hojas: `Ranking`, `Distribución potencia`, `Heatmap`, `Anomalías`, todas usando los `useMemo` visibles.
+  - PDF: capturar `dashboardRef` está OK, pero antes de rasterizar hago scroll a top y espero un frame para que Chart.js redibuje; añado el título de la tecnología, filtros aplicados (región, años, granularidad) en el subtítulo.
+  - PNG: idem — asegurar que captura todo el nodo del dashboard visible.
+- **`src/routes/comparador.tsx`**:
+  - Actualmente el PDF exporta solo el bloque completo. Añado botones locales de PDF/PNG/Excel dentro de cada sub-bloque (`Macrozona`, `Pronóstico`, `SinglePlant`, `MultiPlant`) que capturan su propio `ref` y su propio dataset (series exactas del gráfico + tabla mostrada).
+- **`src/routes/reportes.tsx`**:
+  - Añadir botones: exportar historial visible a Excel/PDF.
+- **`src/lib/exportReport.ts`**:
+  - `exportNodeAsPNG` usa `backgroundColor: "#0b1220"` (oscuro) — cambio a blanco para coherencia con el tema Osinergmin claro.
+  - PDF ya usa fondo blanco, mantiene branding Osinergmin.
+
+### 4. Sin cambios de esquema en la base de datos
+
+`plants` ya tiene todas las columnas necesarias (`company`, `region`, `installed_mw`, `lat`, `lng`, `system`). No hay migración.
 
 ## Archivos
 
-- Nuevo: `src/lib/dataAdmin.functions.ts` (server functions con `supabaseAdmin` + gateway Google Sheets)
-- Editar: `src/lib/sheetsSync.ts` (mantener solo `SHEETS_SOURCES` y tipos, remover fetch directo)
-- Editar: `src/routes/cargar.tsx` (usar server fns, botón Borrar todo, mejorar UX de progreso)
-- Editar: `src/lib/centrales.ts` (delegar `revertUpload` a la nueva server fn)
+- Editar: `src/lib/dataAdmin.functions.ts` — fix numérico, parser catálogo, escape de rango, `resetAndSyncAll`.
+- Editar: `src/routes/cargar.tsx` — botón reset+sync.
+- Editar: `src/routes/tecnologia.$tech.tsx` — más hojas Excel + subtítulo PDF con filtros.
+- Editar: `src/routes/comparador.tsx` — botones export por sub-bloque.
+- Editar: `src/routes/reportes.tsx` — export historial.
+- Editar: `src/lib/exportReport.ts` — fondo blanco en PNG.
 
-## Notas de seguridad
+## Flujo esperado para ti
 
-Los endpoints admin quedan expuestos sin autenticación (igual que el resto de la app hoy). Si más adelante quieres restringir a un admin real, añadimos `requireSupabaseAuth` + tabla `user_roles`. Lo dejo anotado en la memoria de seguridad.
+1. Voy a `/cargar` → pestaña "Sincronizar Google Sheets".
+2. Clic en **"🔁 Borrar TODO y re-sincronizar"** → escribes `BORRAR TODO` → confirma.
+3. Corre wipe + 7 fuentes; DATOS_CENTRALES enriquece el catálogo (región, lat/lng, potencia).
+4. En cada sección (Tecnología, Comparador, Reportes) los botones PDF/PNG/Excel descargan lo mismo que ves en pantalla.
