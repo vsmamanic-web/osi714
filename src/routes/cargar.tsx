@@ -153,13 +153,48 @@ function SheetsSyncPanel() {
             <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-500">Fuentes oficiales de datos</h2>
             <p className="text-xs text-slate-500">Los libros se leen con tu conexión Google autorizada. Pestañas detectadas automáticamente.</p>
           </div>
-          <button
-            disabled={!!busy}
-            onClick={handleSyncAll}
-            className="rounded-lg bg-[#00559E] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#004585] disabled:opacity-50">
-            {busy === "__all__" ? "⏳ Sincronizando todo…" : "🔄 Sincronizar todo"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              disabled={!!busy}
+              onClick={handleSyncAll}
+              className="rounded-lg bg-[#00559E] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#004585] disabled:opacity-50">
+              {busy === "__all__" ? "⏳ Sincronizando todo…" : "🔄 Sincronizar todo"}
+            </button>
+            <button
+              disabled={!!busy}
+              onClick={() => setShowReset((v) => !v)}
+              className="rounded-lg border-2 border-rose-500 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-50 disabled:opacity-50">
+              🔁 Borrar TODO y re-sincronizar
+            </button>
+          </div>
         </div>
+        {showReset && (
+          <div className="mb-3 rounded-lg border-2 border-rose-300 bg-rose-50 p-3">
+            <p className="mb-2 text-sm text-rose-800">
+              Se eliminarán <b>todas las mediciones e historial</b> antes de re-descargar los datos oficiales.
+              Escribe <code className="rounded bg-white px-1 font-bold">BORRAR TODO</code> para confirmar:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                placeholder="BORRAR TODO"
+                className="flex-1 min-w-[200px] rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              <button
+                disabled={busy === "__reset__" || resetConfirm !== "BORRAR TODO"}
+                onClick={handleResetAndSync}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+                {busy === "__reset__" ? "⏳ Procesando…" : "Confirmar reinicio"}
+              </button>
+              <button
+                onClick={() => { setShowReset(false); setResetConfirm(""); }}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-2 md:grid-cols-2">
           {SHEETS_SOURCES.map((s) => (
             <div key={s.key} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
