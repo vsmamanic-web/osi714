@@ -241,9 +241,25 @@ function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; n
   const overallRisk = riskCounts ? (riskCounts.alto >= 3 ? "Alto" : riskCounts.alto + riskCounts.medio >= 4 ? "Medio" : "Bajo") : "—";
   const riskColor = overallRisk === "Alto" ? "#B8261F" : overallRisk === "Medio" ? "#F39F30" : "#00934C";
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const handleExcel = () => {
+    if (!forecast || !p) return;
+    const M = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    exportRowsAsExcel([{ name: "Pronostico", rows: M.map((mo, i) => ({
+      mes: mo, historico_mw: forecast.histAvg[i], pronostico_mw: forecast.forecast[i] ?? null, riesgo: forecast.risk[i],
+    })) }], `pronostico_${p.code}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, `pronostico_${p?.code ?? "central"}.png`); };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">🔮 Detección de bajas y pronóstico</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">🔮 Detección de bajas y pronóstico</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} disabled={!forecast} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40">⬇ PNG</button>
+          <button onClick={handleExcel} disabled={!forecast} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">⬇ Excel</button>
+        </div>
+      </div>
       <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <select value={plantId} onChange={(e) => setPlantId(e.target.value)}
@@ -258,6 +274,7 @@ function ForecastBlock({ plants }: { plants: Array<{ id: string; code: string; n
             </div>
           )}
         </div>
+
         {forecast && p ? (
           <>
             <div className="h-[320px]">
