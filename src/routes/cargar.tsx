@@ -90,9 +90,12 @@ function SheetsSyncPanel() {
   const qc = useQueryClient();
   const syncOne = useServerFn(syncSheetSource);
   const syncAll = useServerFn(syncAllSources);
+  const resetSync = useServerFn(resetAndSyncAll);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<DetailRow[]>([]);
   const [totalInserted, setTotalInserted] = useState(0);
+  const [showReset, setShowReset] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
 
   async function handleSyncOne(key: string) {
     const src = SHEETS_SOURCES.find((s) => s.key === key);
@@ -123,6 +126,24 @@ function SheetsSyncPanel() {
       toast.error((err as Error).message);
     } finally { setBusy(null); }
   }
+
+  async function handleResetAndSync() {
+    if (resetConfirm !== "BORRAR TODO") { toast.error('Debes escribir exactamente "BORRAR TODO".'); return; }
+    setBusy("__reset__"); setLog([]); setTotalInserted(0);
+    try {
+      const res = await resetSync({ data: { confirm: "BORRAR TODO" } });
+      setTotalInserted(res.total);
+      const flat: DetailRow[] = [];
+      for (const s of res.sources) for (const d of s.detail) flat.push({ source: s.source, ...d });
+      setLog(flat);
+      toast.success(`Borrado (${res.wiped.measurementsDeleted.toLocaleString()} medic.) + Sincronización: ${res.total.toLocaleString()} nuevas.`);
+      setShowReset(false); setResetConfirm("");
+      qc.invalidateQueries();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally { setBusy(null); }
+  }
+
 
   return (
     <div className="space-y-4">
