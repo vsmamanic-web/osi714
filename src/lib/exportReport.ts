@@ -5,13 +5,14 @@ import html2canvas from "html2canvas";
 
 export async function exportNodeAsPNG(node: HTMLElement, filename = "dashboard.png") {
   const canvas = await html2canvas(node, {
-    backgroundColor: "#0b1220", scale: 2, useCORS: true, logging: false,
+    backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
   });
   const link = document.createElement("a");
   link.download = filename;
   link.href = canvas.toDataURL("image/png");
   link.click();
 }
+
 
 export function exportRowsAsExcel(sheets: Array<{ name: string; rows: Array<Record<string, unknown>> }>, filename = "datos.xlsx") {
   const wb = XLSX.utils.book_new();
