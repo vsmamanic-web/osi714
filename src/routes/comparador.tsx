@@ -381,9 +381,29 @@ function SinglePlantBlock({ plants }: { plants: Array<{ id: string; code: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meas, [...effectiveYears].join(",")]);
 
+  const secRef = useRef<HTMLDivElement>(null);
+  const selectedPlant = plants.find((p) => p.id === plantId);
+  const handleExcel = () => {
+    if (!chart.labels.length) return;
+    exportRowsAsExcel([{
+      name: "Serie",
+      rows: chart.labels.flatMap((lb, i) => chart.datasets.map((ds) => ({
+        periodo: lb, anio: ds.label, mw: ds.data[i],
+      }))),
+    }], `central_${selectedPlant?.code ?? "sel"}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const handlePNG = async () => { if (secRef.current) await exportNodeAsPNG(secRef.current, `central_${selectedPlant?.code ?? "sel"}.png`); };
+
   return (
-    <section>
-      <h2 className="mb-3 text-lg font-semibold">1. Una central · varios años</h2>
+    <section ref={secRef}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">1. Una central · varios años</h2>
+        <div className="flex gap-2">
+          <button onClick={handlePNG} disabled={!meas.length} className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40">⬇ PNG</button>
+          <button onClick={handleExcel} disabled={!meas.length} className="rounded-md border border-emerald-700 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">⬇ Excel</button>
+        </div>
+      </div>
+
       <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[280px]">
