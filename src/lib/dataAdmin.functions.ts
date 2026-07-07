@@ -30,6 +30,13 @@ const COL_ALIASES = {
   name: ["nombre", "name", "central", "planta"],
   date: ["fecha", "date", "dia", "día"],
   mw:   ["mw", "potencia", "valor", "generacion", "generación", "energia", "energía"],
+  tech: ["tecnologia", "tecnología", "technology", "tec"],
+  system: ["sistema", "system", "sist"],
+  company: ["empresa", "company", "titular", "operador"],
+  region: ["region", "región", "departamento", "depto"],
+  installed: ["potencia_instalada_mw", "potencia_instalada", "instalada_mw", "mw_instalado", "capacidad_mw"],
+  lat: ["lat", "latitud", "latitude"],
+  lng: ["lng", "lon", "long", "longitud", "longitude"],
 };
 
 function normalize(s: string): string {
@@ -54,10 +61,30 @@ function toISO(v: unknown): string | null {
 function toNumber(v: unknown): number | null {
   if (v == null || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const cleaned = String(v).replace(/\s/g, "").replace(",", ".");
-  const n = parseFloat(cleaned);
+  let s = String(v).replace(/\s/g, "").replace(/[^\d,.\-+eE]/g, "");
+  if (!s) return null;
+  const hasDot = s.includes(".");
+  const hasComma = s.includes(",");
+  if (hasDot && hasComma) {
+    // Formato "1,234.56" — coma = miles, punto = decimal
+    s = s.replace(/,/g, "");
+  } else if (hasComma && !hasDot) {
+    // Solo coma → decimal (formato europeo)
+    s = s.replace(/,/g, ".");
+  }
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
 }
+
+function mapTech(v: string): "hidro" | "eolico" | "solar" | "termico" | "otro" {
+  const s = normalize(v);
+  if (s.startsWith("hidro")) return "hidro";
+  if (s.startsWith("eol") || s.startsWith("eól")) return "eolico";
+  if (s.startsWith("sol")) return "solar";
+  if (s.startsWith("term") || s.startsWith("térm")) return "termico";
+  return "otro";
+}
+
 
 // ---------- Google Sheets vía Lovable Gateway ----------
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
