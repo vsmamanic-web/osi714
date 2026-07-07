@@ -82,7 +82,9 @@ function StatsBar() {
   );
 }
 
-interface DetailRow { source: string; sheet: string; status: "ok" | "empty" | "error"; rows?: number; message?: string; }
+interface DetailRow { source: string; sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string; }
+
+
 
 function SheetsSyncPanel() {
   const qc = useQueryClient();
