@@ -236,9 +236,13 @@ function SheetsSyncPanel() {
                   <tr key={i} className="border-t border-slate-100">
                     <td className="px-2 py-1">{p.source}</td>
                     <td className="px-2 py-1 font-mono">{p.sheet}</td>
-                    <td className={`px-2 py-1 ${p.status === "ok" ? "text-emerald-600" : p.status === "empty" ? "text-slate-400" : "text-rose-600"}`}>
-                      {p.status === "ok" ? "✓ OK" : p.status === "empty" ? "vacía" : `✗ ${p.message ?? "error"}`}
+                    <td className={`px-2 py-1 ${p.status === "ok" ? "text-emerald-600" : p.status === "catalog" ? "text-indigo-600" : p.status === "empty" ? "text-slate-400" : "text-rose-600"}`}>
+                      {p.status === "ok" ? "✓ OK"
+                        : p.status === "catalog" ? "◆ Catálogo actualizado"
+                        : p.status === "empty" ? "vacía"
+                        : `✗ ${p.message ?? "error"}`}
                     </td>
+
                     <td className="px-2 py-1 text-right tabular-nums">{p.rows?.toLocaleString() ?? "—"}</td>
                   </tr>
                 ))}
