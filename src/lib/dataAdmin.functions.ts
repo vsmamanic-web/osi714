@@ -402,9 +402,12 @@ export const syncAllSources = createServerFn({ method: "POST" }).handler(async (
         detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
       });
     }
+    // Pausa entre libros para no saturar cuota de Google.
+    await sleep(400);
   }
   return { total, sources: all };
 });
+
 
 async function wipeAllInternal() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
