@@ -387,19 +387,29 @@ export const DEFAULT_PALETTE: Palette = {
   accent: "#00559E",
 };
 
-export async function getPalette(): Promise<Palette> {
-  const { data } = await supabase.from("user_settings").select("palette").eq("id", "global").maybeSingle();
-  const p = (data?.palette ?? {}) as Partial<Palette>;
-  return { ...DEFAULT_PALETTE, ...p };
+const PALETTE_LS_KEY = "sein.palette.v1";
+
+export function getPalette(): Palette {
+  if (typeof window === "undefined") return DEFAULT_PALETTE;
+  try {
+    const raw = window.localStorage.getItem(PALETTE_LS_KEY);
+    if (!raw) return DEFAULT_PALETTE;
+    const p = JSON.parse(raw) as Partial<Palette>;
+    return { ...DEFAULT_PALETTE, ...p };
+  } catch {
+    return DEFAULT_PALETTE;
+  }
 }
 
-export async function savePalette(palette: Palette): Promise<void> {
-  const { error } = await supabase
-    .from("user_settings")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .upsert({ id: "global", palette: palette as any });
-  if (error) throw error;
+export function savePalette(palette: Palette): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PALETTE_LS_KEY, JSON.stringify(palette));
+  } catch {
+    /* localStorage puede estar deshabilitado — ignorar silenciosamente */
+  }
 }
+
 
 // -------- Helpers de agregación (granularidad) --------
 export function bucketKey(iso: string, g: Granularity): string {
