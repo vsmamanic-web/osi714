@@ -470,7 +470,7 @@ function SinglePlantBlock({ plants }: { plants: Array<{ id: string; code: string
 }
 
 // -------------------------- Bloque 2: varias centrales promediadas --------------------------
-function MultiPlantBlock({ plants }: { plants: Array<{ id: string; code: string; name: string; technology: string; system: string }> }) {
+function MultiPlantBlock({ plants }: { plants: Plant[] }) {
   const [selectedPlantIds, setSelectedPlantIds] = useState<string[]>([]);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [pickerFilter, setPickerFilter] = useState("");
