@@ -41,7 +41,12 @@ export const Route = createFileRoute("/comparador")({
 });
 
 function Comparator() {
-  const { data: plants = [] } = useQuery({ queryKey: ["plants"], queryFn: () => listPlants() });
+  const { data: plants = [] } = useQuery({
+    queryKey: ["plants"],
+    queryFn: () => listPlants(),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
   const rootRef = useRef<HTMLDivElement>(null);
   return (
     <div className="p-6 space-y-8" ref={rootRef}>
@@ -53,14 +58,14 @@ function Comparator() {
           </p>
         </div>
         <button
-          onClick={async () => rootRef.current && exportReportPDF({
+          onClick={async () => rootRef.current && exportDashboardPDF({
+            node: rootRef.current,
             title: "Comparador multi-año",
-            subtitle: `Generado ${new Date().toLocaleString("es-PE")}`,
-            sections: [{ title: "Dashboard comparativo", node: rootRef.current }],
+            filters: [{ label: "Generado", value: new Date().toLocaleString("es-PE") }],
             filename: `comparador_${new Date().toISOString().slice(0,10)}.pdf`,
           })}
           className="rounded-md border border-amber-700 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20">
-          📄 Informe PDF
+          📄 Informe PDF (dashboard completo)
         </button>
       </header>
       <MacrozoneBlock />
@@ -70,6 +75,7 @@ function Comparator() {
     </div>
   );
 }
+
 
 // -------------------------- Bloque Macrozona --------------------------
 function MacrozoneBlock() {
