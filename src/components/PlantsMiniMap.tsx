@@ -68,7 +68,7 @@ export function PlantsMiniMap({ plants, selectedIds, onToggle, height = 320 }: P
           lng = base[1] + Math.sin(angle) * radius;
         }
         const isSel = selSet.has(p.id);
-        const color = (palette as Record<string, string>)[p.technology] ?? palette.otro;
+        const color = (palette as unknown as Record<string, string>)[p.technology] ?? palette.otro;
         const marker = L.circleMarker([lat!, lng!], {
           radius: isSel ? 10 : 6,
           color: isSel ? "#0B1220" : color,
