@@ -309,13 +309,17 @@ function parseCatalogSheet(values: string[][]): CatalogRow[] {
   if (iCode < 0 || iName < 0) return [];
 
   const rows: CatalogRow[] = [];
+  const skipped: string[] = [];
   for (let r = 1; r < values.length; r++) {
     const row = values[r] ?? [];
-    const code = String(row[iCode] ?? "").trim();
+    const rawCode = String(row[iCode] ?? "").trim();
     const name = String(row[iName] ?? "").trim();
-    if (!code || !name) continue;
+    if (!rawCode || !name) continue;
+    // Validaciones estrictas: código numérico y distinto del nombre.
+    if (!/^\d+$/.test(rawCode)) { skipped.push(`${rawCode}(no numérico)`); continue; }
+    if (rawCode.toUpperCase() === name.toUpperCase()) { skipped.push(`${rawCode}(code=name)`); continue; }
     rows.push({
-      code: code.toUpperCase().slice(0, 32),
+      code: rawCode.slice(0, 32),
       name,
       technology: iTech >= 0 ? mapTech(String(row[iTech] ?? "")) : "otro",
       system: iSys >= 0 ? (String(row[iSys] ?? "").trim() || "SEIN") : "SEIN",
@@ -326,8 +330,10 @@ function parseCatalogSheet(values: string[][]): CatalogRow[] {
       lng: iLng >= 0 ? toNumber(row[iLng]) : null,
     });
   }
+  if (skipped.length) console.warn("[catálogo] filas descartadas:", skipped.slice(0, 20));
   return rows;
 }
+
 
 async function upsertCatalogRows(rows: CatalogRow[]): Promise<{ updated: number }> {
   if (!rows.length) return { updated: 0 };
