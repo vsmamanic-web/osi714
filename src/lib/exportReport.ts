@@ -168,13 +168,7 @@ export async function exportDashboardPDF(args: {
     );
   }
   pdf.save(filename);
-  // Ignorar imgH: se usa implícitamente arriba, evitamos warning.
+  // Referenciamos imgH para conservar el cálculo semántico (aunque el paginado usa scale).
   void imgH;
-  const pageCount = pdf.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    pdf.setPage(i);
-    pdf.setFontSize(7); pdf.setTextColor(100);
-    pdf.text(`Osinergmin — Reporte generado ${new Date().toLocaleString("es-PE")} · Pág ${i}/${pageCount}`, MARGIN, 293);
-  }
-  pdf.save(args.filename ?? "informe_sein_bi.pdf");
 }
+
