@@ -436,7 +436,9 @@ export const resetAndSyncAll = createServerFn({ method: "POST" })
           source: src.label, inserted: 0, sheets: 0,
           detail: [{ sheet: "-", status: "error", message: (err as Error).message }],
         });
-      }
+      await sleep(400);
+    }
+
     }
     return { wiped, total, sources: all };
   });
