@@ -11,11 +11,14 @@ import {
   periodLabel,
   TECH_LABEL,
   type Granularity,
+  type Plant,
   type Technology,
 } from "@/lib/centrales";
 import { macrozoneOf, MACROZONES, MACROZONE_COLOR, type Macrozone } from "@/lib/macrozones";
 import { forecastCurrentYear } from "@/lib/forecasting";
-import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { exportDashboardPDF, exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { PlantsMiniMap } from "@/components/PlantsMiniMap";
+
 import { Line } from "react-chartjs-2";
 import {
   BarElement,
