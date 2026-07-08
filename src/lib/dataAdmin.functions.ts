@@ -487,3 +487,37 @@ export const getDataStats = createServerFn({ method: "GET" }).handler(async () =
     lastUpload: last?.[0]?.uploaded_at ?? null,
   };
 });
+
+// ---------- Estado de conexión por hoja ----------
+export const checkSourcesHealth = createServerFn({ method: "GET" }).handler(async () => {
+  const results: Array<{
+    key: string; label: string; status: "connected" | "error"; message?: string; sheets?: number;
+  }> = [];
+  for (const src of SHEETS_SOURCES) {
+    try {
+      const titles = await listSheetTitles(src.spreadsheetId);
+      results.push({ key: src.key, label: src.label, status: "connected", sheets: titles.length });
+    } catch (err) {
+      results.push({ key: src.key, label: src.label, status: "error", message: (err as Error).message });
+    }
+    await sleep(150);
+  }
+  return { checkedAt: new Date().toISOString(), sources: results };
+});
+
+// ---------- Años disponibles (dinámico desde la base) ----------
+export const listAvailableYears = createServerFn({ method: "GET" }).handler(async () => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin
+    .from("measurements")
+    .select("date")
+    .order("date", { ascending: true });
+  if (error) throw new Error(error.message);
+  const years = new Set<number>();
+  for (const r of (data ?? []) as Array<{ date: string }>) {
+    const y = Number(String(r.date).slice(0, 4));
+    if (Number.isFinite(y) && y > 1900) years.add(y);
+  }
+  return { years: [...years].sort((a, b) => a - b) };
+});
+
