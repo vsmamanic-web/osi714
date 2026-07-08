@@ -70,7 +70,97 @@ export async function exportReportPDF(args: {
         y += Math.min(imgH, 240) + 6;
       } catch { /* nada */ }
     }
+}
+
+/**
+ * Exporta el nodo del dashboard completo en PDF, paginado, replicando exactamente
+ * lo que ve el usuario (KPIs, tablas, gráficos, filtros, mapas). Incluye chips
+ * con los filtros aplicados en la cabecera.
+ */
+export async function exportDashboardPDF(args: {
+  node: HTMLElement;
+  title: string;
+  filters?: Array<{ label: string; value: string }>;
+  filename?: string;
+}) {
+  const { node, title, filters = [], filename = "dashboard.pdf" } = args;
+  // Aseguramos redibujo de Chart.js antes de rasterizar.
+  node.scrollIntoView({ block: "start", behavior: "instant" as ScrollBehavior });
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise((r) => setTimeout(r, 250));
+
+  const canvas = await html2canvas(node, {
+    backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
+    windowWidth: node.scrollWidth,
+    windowHeight: node.scrollHeight,
+  });
+
+  const pdf = new jsPDF("p", "mm", "a4");
+  const W = 210, H = 297, MARGIN = 10;
+  const INSTITUTIONAL = "#00559E";
+
+  // Cabecera institucional en la primera página.
+  pdf.setFillColor(INSTITUTIONAL);
+  pdf.rect(0, 0, W, 24, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold").setFontSize(14);
+  pdf.text("Osinergmin — SEIN BI", MARGIN, 10);
+  pdf.setFont("helvetica", "normal").setFontSize(10);
+  pdf.text(title, MARGIN, 18);
+  pdf.setTextColor(15, 23, 42);
+
+  // Chips de filtros aplicados.
+  let filterY = 30;
+  if (filters.length) {
+    pdf.setFont("helvetica", "normal").setFontSize(8);
+    const chipText = filters.map((f) => `${f.label}: ${f.value}`).join("   ·   ");
+    const lines = pdf.splitTextToSize(chipText, W - 2 * MARGIN);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(lines, MARGIN, filterY);
+    filterY += lines.length * 4 + 2;
+    pdf.setTextColor(15, 23, 42);
   }
+
+  const availW = W - 2 * MARGIN;
+  const imgW = availW;
+  const imgH = (canvas.height / canvas.width) * imgW;
+
+  // Paginado vertical: recortamos el canvas por franjas del alto disponible.
+  const firstPageAvail = H - filterY - MARGIN;
+  const nextPageAvail = H - 2 * MARGIN;
+  const scale = imgW / canvas.width;
+  let renderedPx = 0;
+  let firstPage = true;
+
+  while (renderedPx < canvas.height) {
+    const availMm = firstPage ? firstPageAvail : nextPageAvail;
+    const availPx = availMm / scale;
+    const slicePx = Math.min(availPx, canvas.height - renderedPx);
+    const sliceCanvas = document.createElement("canvas");
+    sliceCanvas.width = canvas.width;
+    sliceCanvas.height = slicePx;
+    const ctx = sliceCanvas.getContext("2d")!;
+    ctx.drawImage(canvas, 0, renderedPx, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
+    const img = sliceCanvas.toDataURL("image/png");
+    if (!firstPage) pdf.addPage();
+    const y = firstPage ? filterY : MARGIN;
+    pdf.addImage(img, "PNG", MARGIN, y, imgW, slicePx * scale);
+    renderedPx += slicePx;
+    firstPage = false;
+  }
+
+  const pageCount = pdf.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(7); pdf.setTextColor(100);
+    pdf.text(
+      `Osinergmin — ${title} · Generado ${new Date().toLocaleString("es-PE")} · Pág ${i}/${pageCount}`,
+      MARGIN, H - 4,
+    );
+  }
+  pdf.save(filename);
+  // Ignorar imgH: se usa implícitamente arriba, evitamos warning.
+  void imgH;
   const pageCount = pdf.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     pdf.setPage(i);
