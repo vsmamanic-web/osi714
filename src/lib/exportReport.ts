@@ -70,7 +70,16 @@ export async function exportReportPDF(args: {
         y += Math.min(imgH, 240) + 6;
       } catch { /* nada */ }
     }
+  }
+  const pageCount = pdf.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(7); pdf.setTextColor(100);
+    pdf.text(`Osinergmin — Reporte generado ${new Date().toLocaleString("es-PE")} · Pág ${i}/${pageCount}`, MARGIN, 293);
+  }
+  pdf.save(args.filename ?? "informe_sein_bi.pdf");
 }
+
 
 /**
  * Exporta el nodo del dashboard completo en PDF, paginado, replicando exactamente
