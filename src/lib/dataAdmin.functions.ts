@@ -86,44 +86,68 @@ function mapTech(v: string): "hidro" | "eolico" | "solar" | "termico" | "otro" {
 }
 
 
-// ---------- Google Sheets vía Lovable Gateway ----------
+// ---------- Google Sheets vía Lovable Gateway (con backoff y caché) ----------
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
-async function gsFetch(path: string): Promise<any> {
+// Caché en memoria del Worker (vive lo que dure el aislado; suficiente para reducir 429).
+const CACHE_TTL_MS = 5 * 60_000;
+const sheetCache = new Map<string, { at: number; data: unknown }>();
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function gsFetch(path: string, opts?: { cache?: boolean }): Promise<any> {
   const lovableKey = process.env.LOVABLE_API_KEY;
   const connKey = process.env.GOOGLE_SHEETS_API_KEY;
   if (!lovableKey || !connKey) {
     throw new Error("Faltan LOVABLE_API_KEY o GOOGLE_SHEETS_API_KEY. Reconecta el conector Google Sheets.");
   }
-  const res = await fetch(`${GATEWAY}${path}`, {
-    headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": connKey,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
+  if (opts?.cache) {
+    const hit = sheetCache.get(path);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+  }
+  const MAX = 5;
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < MAX; attempt++) {
+    const res = await fetch(`${GATEWAY}${path}`, {
+      headers: {
+        Authorization: `Bearer ${lovableKey}`,
+        "X-Connection-Api-Key": connKey,
+        Accept: "application/json",
+      },
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (opts?.cache) sheetCache.set(path, { at: Date.now(), data: json });
+      return json;
+    }
+    // 429 o 5xx → backoff exponencial. Respeta Retry-After si viene.
+    if (res.status === 429 || res.status >= 500) {
+      const retryAfter = Number(res.headers.get("Retry-After") ?? 0);
+      const wait = retryAfter > 0 ? retryAfter * 1000 : Math.min(500 * 2 ** attempt, 8000);
+      lastErr = new Error(`Google Sheets ${res.status} (reintento ${attempt + 1}/${MAX} en ${wait}ms)`);
+      await sleep(wait);
+      continue;
+    }
     const t = await res.text();
     throw new Error(`Google Sheets ${res.status}: ${t.slice(0, 300)}`);
   }
-  return res.json();
+  throw new Error(`Google Sheets falló tras ${MAX} intentos: ${(lastErr as Error)?.message ?? "desconocido"}`);
 }
 
 async function listSheetTitles(spreadsheetId: string): Promise<string[]> {
-  const data = await gsFetch(`/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`);
+  const data = await gsFetch(`/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, { cache: true });
   return (data?.sheets ?? []).map((s: any) => s?.properties?.title).filter(Boolean);
 }
 
 async function readSheetValues(spreadsheetId: string, title: string): Promise<string[][]> {
-  // Google acepta la comilla simple para nombres con espacios. Solo escapamos el título,
-  // no el `!A1:...` (los `:` no deben codificarse).
   const escapedTitle = title.includes(" ") || /[^a-zA-Z0-9_]/.test(title)
     ? `'${title.replace(/'/g, "''")}'`
     : title;
   const range = `${escapedTitle}!A1:ZZ200000`;
-  const data = await gsFetch(`/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`);
+  const data = await gsFetch(`/spreadsheets/${spreadsheetId}/values/${range}`, { cache: true });
   return (data?.values ?? []) as string[][];
 }
+
 
 
 // ---------- Parseo genérico ----------
