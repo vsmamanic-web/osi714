@@ -203,6 +203,8 @@ function SheetsSyncPanel() {
 
   return (
     <div className="space-y-4">
+      <HealthPanel />
+
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
