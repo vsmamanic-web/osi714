@@ -687,6 +687,26 @@ function MultiPlantBlock({ plants }: { plants: Plant[] }) {
         </div>
       </div>
 
+      {/* Mapa integrado — sincronización bidireccional con la selección */}
+      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+            🗺 Mapa de centrales · {plants.length} disponibles · {selectedPlantIds.length} seleccionadas
+          </h3>
+          <div className="text-[11px] text-slate-500">Clic en un marcador para añadir / quitar de la comparación</div>
+        </div>
+        <PlantsMiniMap
+          plants={plants}
+          selectedIds={selectedPlantIds}
+          onToggle={(id) => {
+            setSelectedPlantIds((prev) =>
+              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+            );
+          }}
+          height={360}
+        />
+      </div>
+
       {yearSummary.length > 1 && (
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
@@ -695,6 +715,7 @@ function MultiPlantBlock({ plants }: { plants: Plant[] }) {
           <SummaryTable summary={yearSummary} unit="MW" />
         </div>
       )}
+
     </section>
   );
 }
