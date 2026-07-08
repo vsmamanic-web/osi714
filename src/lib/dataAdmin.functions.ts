@@ -258,14 +258,19 @@ async function insertParsedRows(
     }))
     .filter((m) => m.plant_id) as Array<{ plant_id: string; date: string; mw: number; upload_id: string }>;
 
-  const CHUNK = 800;
+  // UPSERT respetando el índice único (plant_id, date) para evitar duplicados y
+  // permitir re-sincronizar sin borrar previamente.
+  const CHUNK = 500;
   let inserted = 0;
   for (let i = 0; i < measurements.length; i += CHUNK) {
     const slice = measurements.slice(i, i + CHUNK);
-    const { error } = await supabaseAdmin.from("measurements").insert(slice);
+    const { error } = await supabaseAdmin
+      .from("measurements")
+      .upsert(slice, { onConflict: "plant_id,date" });
     if (error) throw error;
     inserted += slice.length;
   }
+
 
   await supabaseAdmin
     .from("data_uploads")
