@@ -17,7 +17,9 @@ import {
   wipeAllMeasurements,
   resetAndSyncAll,
   getDataStats,
+  checkSourcesHealth,
 } from "@/lib/dataAdmin.functions";
+
 import { toast, Toaster } from "sonner";
 
 
@@ -71,7 +73,12 @@ function LoadPage() {
 
 function StatsBar() {
   const stats = useServerFn(getDataStats);
-  const { data } = useQuery({ queryKey: ["data-stats"], queryFn: () => stats() });
+  const { data } = useQuery({
+    queryKey: ["data-stats"],
+    queryFn: () => stats(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
   if (!data) return null;
   return (
     <div className="mb-4 grid grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
@@ -81,6 +88,55 @@ function StatsBar() {
     </div>
   );
 }
+
+function HealthPanel() {
+  const healthFn = useServerFn(checkSourcesHealth);
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["sheets-health"],
+    queryFn: () => healthFn(),
+    staleTime: 2 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  return (
+    <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-500">
+          Estado de conexiones Google Sheets
+        </h2>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="text-xs text-sky-600 hover:underline disabled:opacity-50">
+          {isFetching ? "Verificando…" : "↻ Reintentar"}
+        </button>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {SHEETS_SOURCES.map((s) => {
+          const info = data?.sources.find((x) => x.key === s.key);
+          const status = isFetching && !info ? "connecting" : info?.status ?? "connecting";
+          const badge =
+            status === "connected" ? { bg: "#DCFCE7", fg: "#166534", txt: `✓ Conectado${info?.sheets ? ` (${info.sheets} pest.)` : ""}` }
+            : status === "error" ? { bg: "#FEE2E2", fg: "#991B1B", txt: `✗ Error` }
+            : { bg: "#FEF3C7", fg: "#92400E", txt: "⏳ Conectando…" };
+          return (
+            <div key={s.key} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold text-slate-800">{s.label}</div>
+                {info?.message && status === "error" && (
+                  <div className="truncate text-[10px] text-rose-600" title={info.message}>{info.message}</div>
+                )}
+              </div>
+              <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ background: badge.bg, color: badge.fg }}>{badge.txt}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 
 interface DetailRow { source: string; sheet: string; status: "ok" | "empty" | "error" | "catalog"; rows?: number; message?: string; }
 
@@ -147,6 +203,8 @@ function SheetsSyncPanel() {
 
   return (
     <div className="space-y-4">
+      <HealthPanel />
+
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>

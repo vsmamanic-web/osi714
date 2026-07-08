@@ -1,6 +1,5 @@
-// Contexto de paleta de colores, persistido en la nube.
-import { createContext, useContext, useEffect, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+// Contexto de paleta de colores, persistido en localStorage (sin RLS ni backend).
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import {
   DEFAULT_PALETTE,
   getPalette,
@@ -11,13 +10,13 @@ import {
 
 interface Ctx {
   palette: Palette;
-  setPalette: (p: Palette) => Promise<void>;
+  setPalette: (p: Palette) => void;
   colorFor: (tech: Technology) => string;
 }
 
 const ThemeCtx = createContext<Ctx>({
   palette: DEFAULT_PALETTE,
-  setPalette: async () => {},
+  setPalette: () => {},
   colorFor: (t) => DEFAULT_PALETTE[t] ?? DEFAULT_PALETTE.otro,
 });
 
@@ -46,12 +45,12 @@ export const PALETTE_PRESETS: Record<string, Palette> = {
 };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const qc = useQueryClient();
-  const { data: palette = DEFAULT_PALETTE } = useQuery({
-    queryKey: ["palette"],
-    queryFn: getPalette,
-    staleTime: 60_000,
-  });
+  // Inicializamos con default para evitar mismatch SSR; hidratamos desde localStorage en efecto.
+  const [palette, setPaletteState] = useState<Palette>(DEFAULT_PALETTE);
+
+  useEffect(() => {
+    setPaletteState(getPalette());
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -65,9 +64,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const value: Ctx = {
     palette,
-    setPalette: async (p) => {
-      await savePalette(p);
-      qc.setQueryData(["palette"], p);
+    setPalette: (p) => {
+      savePalette(p);
+      setPaletteState(p);
     },
     colorFor: (t) => palette[t] ?? palette.otro,
   };

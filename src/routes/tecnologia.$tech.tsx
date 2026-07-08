@@ -59,11 +59,16 @@ function TechModule() {
   const { data: plants = [] } = useQuery({
     queryKey: ["plants", tech, "sein"],
     queryFn: () => listPlants({ tech, system: IN_SEIN }),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
   const { data: rows = [] } = useQuery({
     queryKey: ["measurements", tech, "sein"],
     queryFn: () => getMeasurementsByTech(tech, { system: IN_SEIN }),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
+
 
   const [region, setRegion] = useState<string>("ALL");
   const [granularity, setGranularity] = useState<Granularity>("day");

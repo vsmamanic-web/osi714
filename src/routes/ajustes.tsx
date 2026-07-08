@@ -15,15 +15,16 @@ function Ajustes() {
   const [draft, setDraft] = useState<Palette>(palette);
   const [saving, setSaving] = useState(false);
 
-  const apply = async () => {
+  const apply = () => {
     setSaving(true);
     try {
-      await setPalette(draft);
+      setPalette(draft);
       toast.success("Paleta guardada.");
     } catch (e) {
       toast.error((e as Error).message);
     } finally { setSaving(false); }
   };
+
 
   const TECHS: Technology[] = ["hidro", "eolico", "solar", "termico", "otro"];
 

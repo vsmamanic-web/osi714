@@ -1,63 +1,79 @@
-## Contexto
+# Plan integral de correcciones SEIN BI
 
-- El conector Google Sheets (VANESA) sigue vinculado y funcional.
-- Los 7 spreadsheets responden correctamente y la mayoría usa formato largo `codigo | nombre | fecha | mw`.
-- Base actual: 196 mediciones + `data_uploads` residuales — a borrar antes de re-sincronizar.
+## 1. Tema y paleta sin RLS (`src/lib/theme.tsx`, `src/lib/centrales.ts`, `src/routes/ajustes.tsx`)
+- Reemplazar `getPalette`/`savePalette` (que golpean `user_settings`) por lectura/escritura en `localStorage` (`sein.palette.v1`).
+- Eliminar el uso de `useQuery(['palette'])` con Supabase; `ThemeProvider` inicia sincronía leyendo `localStorage`, aplica variables CSS y persiste en cada `setPalette`.
+- Quitar referencias a `user_settings` de `centrales.ts` (mantener el tipo `Palette` y `DEFAULT_PALETTE`). No se toca la tabla en DB (queda inutilizada, pero sin migración destructiva).
 
-## Bugs detectados al re-inspeccionar los libros
+## 2. Caché y backoff para Google Sheets (`src/lib/dataAdmin.functions.ts`)
+- Añadir `readSheetValues` con reintentos: si Google responde 429/5xx → espera `Retry-After` o backoff exponencial (500 ms → 8 s, máx 5 intentos).
+- Nuevo cache server-side en memoria del Worker por `spreadsheetId+range` con TTL 5 min para evitar relecturas dentro de la misma sync.
+- Consolidar: `batchGet` para leer varias pestañas del mismo spreadsheet en una sola llamada cuando corresponda.
+- `syncAllSources` pasa a **secuencial con pausa 400 ms** entre spreadsheets (elimina ráfaga que dispara 429).
+- Cliente (`cargar.tsx`, dashboards): usar `staleTime: 5 * 60_000` y `refetchOnWindowFocus: false` en TODAS las queries de `measurements`/`plants` para no re-consultar al cambiar de tab/filtro.
 
-1. **Parser numérico corrompe MW**: los valores llegan con coma de miles (`"2,667.35"`). `toNumber` hace `.replace(",", ".")` → convierte `"2,667.35"` en `"2.667.35"` → parsea como `2.667`. Toda la sincronización previa quedó dividida por ~1000. Fix: `.replace(/,/g, "")` para eliminar comas de miles.
-2. **DATOS_CENTRALES no se importa**: es un catálogo de centrales (columnas `codigo, nombre, tecnologia, sistema, empresa, region, potencia_instalada_mw, lat, lng, zona`). El parser genérico devuelve vacío porque no hay `fecha`. Se debe procesar en modo catálogo para enriquecer la tabla `plants` (región, potencia, lat/lng, empresa, tecnología correcta).
-3. **Pestañas con espacio** (`"Hoja 1"` en CENTRALES_TERMICAS): el rango se envía sin escapar, funciona por accidente en Google. Añado `encodeURIComponent` solo al segmento del rango.
+## 3. Estado de conexión por hoja (`src/lib/dataAdmin.functions.ts`, `src/routes/cargar.tsx`)
+- Nueva server fn `checkSourcesHealth()` que hace un `spreadsheets.get` ligero (solo `properties.title`) a cada URL configurada y devuelve `{ key, status: 'connected'|'connecting'|'error', message }`.
+- `cargar.tsx` muestra un panel "Estado de conexiones" con badge por hoja; al detectar `error`, ofrece botón "Reintentar" que reejecuta el check con backoff.
+- Se ejecuta al montar `/cargar` y en `staleTime: 2 min`; no bloquea el resto de la UI.
 
-## Cambios
+## 4. Limpieza catálogo eólico
+- Migración: `DELETE FROM public.plants WHERE technology='eolico' AND code = name` (borra los 13 registros basura junto con sus measurements por FK cascade — se añade `ON DELETE CASCADE` en `measurements.plant_id` si no existe).
+- En `parseCatalogSheet` (DATOS_CENTRALES) validar: `code` debe matchear `/^\d+$/` y `code !== name`; si no, se omite la fila y se loguea.
+- Frontend: en formularios de plantas (si existen inputs manuales) misma validación.
 
-### 1. `src/lib/dataAdmin.functions.ts`
+## 5. UPSERT de measurements (`src/lib/dataAdmin.functions.ts`)
+- Cambiar los `insert` por `upsert({ onConflict: 'plant_id,date' })` para respetar el unique existente.
+- Confirmar que el índice único `measurements_plant_id_date_key` existe (ya lo indica el error).
 
-- **`toNumber` corregido**: eliminar comas de miles; solo tratar `,` como decimal si no hay `.`.
-- **`parseCatalogSheet`** (nueva): para `DATOS_CENTRALES` — mapea `tecnologia → technology` (HIDROELÉCTRICA→hidro, EÓLICA→eolico, SOLAR→solar, TÉRMICA→termico), extrae `system, company, region, installed_mw, lat, lng` y hace upsert por `code` en `plants` (no toca `measurements`).
-- **`syncSheetSource`** ramifica: si `key === "datos"` → parseo catálogo; resto → parseo mediciones actual (con `toNumber` arreglado).
-- **`readSheetValues`**: escapar solo el segmento del rango, no el `!A1:ZZ...`.
-- **Nueva server fn `resetAndSyncAll`** (opcional pero útil): en un solo click hace `wipeAllMeasurements` → luego `syncAllSources`. Devuelve resumen combinado.
+## 6. Selector dinámico de años
+- Nueva server fn `listAvailableYears()` que hace `SELECT DISTINCT EXTRACT(YEAR FROM date) FROM measurements ORDER BY 1`.
+- Reemplazar los arrays hardcodeados de años en `tecnologia.$tech.tsx`, `comparador.tsx`, `reportes.tsx` por `useQuery(['years'], listAvailableYears)`.
+- Adicionalmente, en sync leer también años desde nombres de pestañas (`/^\d{4}$/`) para exponerlos aunque aún no haya mediciones — se guardan implícitamente al importar.
 
-### 2. `src/routes/cargar.tsx` — pestaña Sincronizar
+## 7. Exportación PDF fiel al dashboard (`src/lib/exportReport.ts`, dashboards)
+- Nuevo helper `exportDashboardPDF(node, { title, filters })`: hace `html2canvas` de todo el `dashboardRef` (KPIs + gráficos + tablas + filtros aplicados renderizados como chips), pagina automáticamente si excede A4, mantiene branding Osinergmin en cabecera/pie.
+- Reemplaza la variante "resumen" actual en `tecnologia.$tech.tsx`, `comparador.tsx`, `reportes.tsx`, `mapa.tsx` (mapa se rasteriza con `leaflet-image` o fallback `html2canvas` sobre el contenedor).
+- Antes de capturar: scroll a top del nodo + `await new Promise(r=>requestAnimationFrame(r))` doble para asegurar redibujo Chart.js.
 
-- Botón nuevo: **"🔁 Borrar TODO y re-sincronizar"** (con doble confirmación "BORRAR TODO"), que llama a `resetAndSyncAll`.
-- Se conserva el botón "Sincronizar todo" y los individuales.
-- Log muestra fila especial para DATOS_CENTRALES con "N centrales actualizadas".
+## 8. Mapa integrado en Comparador Multi-Año (`src/routes/comparador.tsx`)
+- Agregar panel lateral con Leaflet inicializado solo con las centrales del filtro activo.
+- Estado compartido `selectedPlantId` (Zustand ligero o `useState` a nivel de página):
+  - clic en marcador → setSelected → tabla/gráficos filtran y hacen scroll al ítem.
+  - selección en tabla/gráfico → marcador se resalta (`setStyle` + `openPopup`).
+- Popup del marcador: código, nombre, tecnología, región, empresa, potencia MW, coord real/aprox.
 
-### 3. Descargas por sección (PDF / PNG / Excel)
+## 9. Validación final
+- Correr build (`tsgo`) + smoke con Playwright: abrir `/`, `/cargar`, `/comparador`, cambiar paleta en `/ajustes`, verificar 0 errores en consola y sin llamadas a `user_settings`.
+- Verificar quota: log del server debe mostrar `cache hit` en la segunda navegación.
 
-Objetivo: que cada botón exporte **exactamente lo que está a la vista**, no un dataset global.
+## Archivos a editar
+- `src/lib/theme.tsx` — localStorage.
+- `src/lib/centrales.ts` — quitar getPalette/savePalette Supabase.
+- `src/lib/dataAdmin.functions.ts` — backoff, cache, upsert, batchGet, checkSourcesHealth, listAvailableYears, validación catálogo.
+- `src/lib/exportReport.ts` — `exportDashboardPDF` completo.
+- `src/routes/cargar.tsx` — panel estado + retirar user_settings.
+- `src/routes/comparador.tsx` — mapa + sync bidireccional + PDF completo + años dinámicos.
+- `src/routes/tecnologia.$tech.tsx` — años dinámicos + PDF completo.
+- `src/routes/reportes.tsx` — años dinámicos + PDF completo.
+- `src/routes/ajustes.tsx` — ya usa `useTheme`, solo se ajusta la persistencia.
 
-- **`src/routes/tecnologia.$tech.tsx`**:
-  - Excel actual ya usa las series filtradas (bien). Añado hojas: `Ranking`, `Distribución potencia`, `Heatmap`, `Anomalías`, todas usando los `useMemo` visibles.
-  - PDF: capturar `dashboardRef` está OK, pero antes de rasterizar hago scroll a top y espero un frame para que Chart.js redibuje; añado el título de la tecnología, filtros aplicados (región, años, granularidad) en el subtítulo.
-  - PNG: idem — asegurar que captura todo el nodo del dashboard visible.
-- **`src/routes/comparador.tsx`**:
-  - Actualmente el PDF exporta solo el bloque completo. Añado botones locales de PDF/PNG/Excel dentro de cada sub-bloque (`Macrozona`, `Pronóstico`, `SinglePlant`, `MultiPlant`) que capturan su propio `ref` y su propio dataset (series exactas del gráfico + tabla mostrada).
-- **`src/routes/reportes.tsx`**:
-  - Añadir botones: exportar historial visible a Excel/PDF.
-- **`src/lib/exportReport.ts`**:
-  - `exportNodeAsPNG` usa `backgroundColor: "#0b1220"` (oscuro) — cambio a blanco para coherencia con el tema Osinergmin claro.
-  - PDF ya usa fondo blanco, mantiene branding Osinergmin.
+## Migración DB (única)
+```sql
+-- limpiar registros basura
+DELETE FROM public.plants
+ WHERE technology='eolico' AND code = name;
+-- cascada al borrar plants (si no existe)
+ALTER TABLE public.measurements
+  DROP CONSTRAINT IF EXISTS measurements_plant_id_fkey,
+  ADD  CONSTRAINT measurements_plant_id_fkey
+       FOREIGN KEY (plant_id) REFERENCES public.plants(id) ON DELETE CASCADE;
+```
 
-### 4. Sin cambios de esquema en la base de datos
-
-`plants` ya tiene todas las columnas necesarias (`company`, `region`, `installed_mw`, `lat`, `lng`, `system`). No hay migración.
-
-## Archivos
-
-- Editar: `src/lib/dataAdmin.functions.ts` — fix numérico, parser catálogo, escape de rango, `resetAndSyncAll`.
-- Editar: `src/routes/cargar.tsx` — botón reset+sync.
-- Editar: `src/routes/tecnologia.$tech.tsx` — más hojas Excel + subtítulo PDF con filtros.
-- Editar: `src/routes/comparador.tsx` — botones export por sub-bloque.
-- Editar: `src/routes/reportes.tsx` — export historial.
-- Editar: `src/lib/exportReport.ts` — fondo blanco en PNG.
-
-## Flujo esperado para ti
-
-1. Voy a `/cargar` → pestaña "Sincronizar Google Sheets".
-2. Clic en **"🔁 Borrar TODO y re-sincronizar"** → escribes `BORRAR TODO` → confirma.
-3. Corre wipe + 7 fuentes; DATOS_CENTRALES enriquece el catálogo (región, lat/lng, potencia).
-4. En cada sección (Tecnología, Comparador, Reportes) los botones PDF/PNG/Excel descargan lo mismo que ves en pantalla.
+## Flujo esperado
+1. Cambias paleta en `/ajustes` → se guarda al instante en localStorage, sin errores RLS.
+2. `/cargar` muestra el estado de las 7 hojas; sincroniza con caché + backoff, sin 429.
+3. Catálogo eólico queda limpio, códigos numéricos.
+4. Filtros de año se rellenan solos desde la BD/pestañas.
+5. Cualquier "Exportar PDF" produce copia fiel del dashboard visible.
+6. Comparador tiene mapa sincronizado bidireccionalmente.

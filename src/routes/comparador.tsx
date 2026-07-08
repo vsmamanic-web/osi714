@@ -11,11 +11,14 @@ import {
   periodLabel,
   TECH_LABEL,
   type Granularity,
+  type Plant,
   type Technology,
 } from "@/lib/centrales";
 import { macrozoneOf, MACROZONES, MACROZONE_COLOR, type Macrozone } from "@/lib/macrozones";
 import { forecastCurrentYear } from "@/lib/forecasting";
-import { exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { exportDashboardPDF, exportNodeAsPNG, exportReportPDF, exportRowsAsExcel } from "@/lib/exportReport";
+import { PlantsMiniMap } from "@/components/PlantsMiniMap";
+
 import { Line } from "react-chartjs-2";
 import {
   BarElement,
@@ -38,7 +41,12 @@ export const Route = createFileRoute("/comparador")({
 });
 
 function Comparator() {
-  const { data: plants = [] } = useQuery({ queryKey: ["plants"], queryFn: () => listPlants() });
+  const { data: plants = [] } = useQuery({
+    queryKey: ["plants"],
+    queryFn: () => listPlants(),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
   const rootRef = useRef<HTMLDivElement>(null);
   return (
     <div className="p-6 space-y-8" ref={rootRef}>
@@ -50,14 +58,14 @@ function Comparator() {
           </p>
         </div>
         <button
-          onClick={async () => rootRef.current && exportReportPDF({
+          onClick={async () => rootRef.current && exportDashboardPDF({
+            node: rootRef.current,
             title: "Comparador multi-año",
-            subtitle: `Generado ${new Date().toLocaleString("es-PE")}`,
-            sections: [{ title: "Dashboard comparativo", node: rootRef.current }],
+            filters: [{ label: "Generado", value: new Date().toLocaleString("es-PE") }],
             filename: `comparador_${new Date().toISOString().slice(0,10)}.pdf`,
           })}
           className="rounded-md border border-amber-700 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20">
-          📄 Informe PDF
+          📄 Informe PDF (dashboard completo)
         </button>
       </header>
       <MacrozoneBlock />
@@ -67,6 +75,7 @@ function Comparator() {
     </div>
   );
 }
+
 
 // -------------------------- Bloque Macrozona --------------------------
 function MacrozoneBlock() {
@@ -461,7 +470,7 @@ function SinglePlantBlock({ plants }: { plants: Array<{ id: string; code: string
 }
 
 // -------------------------- Bloque 2: varias centrales promediadas --------------------------
-function MultiPlantBlock({ plants }: { plants: Array<{ id: string; code: string; name: string; technology: string; system: string }> }) {
+function MultiPlantBlock({ plants }: { plants: Plant[] }) {
   const [selectedPlantIds, setSelectedPlantIds] = useState<string[]>([]);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [pickerFilter, setPickerFilter] = useState("");
@@ -678,6 +687,26 @@ function MultiPlantBlock({ plants }: { plants: Array<{ id: string; code: string;
         </div>
       </div>
 
+      {/* Mapa integrado — sincronización bidireccional con la selección */}
+      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+            🗺 Mapa de centrales · {plants.length} disponibles · {selectedPlantIds.length} seleccionadas
+          </h3>
+          <div className="text-[11px] text-slate-500">Clic en un marcador para añadir / quitar de la comparación</div>
+        </div>
+        <PlantsMiniMap
+          plants={plants}
+          selectedIds={selectedPlantIds}
+          onToggle={(id) => {
+            setSelectedPlantIds((prev) =>
+              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+            );
+          }}
+          height={360}
+        />
+      </div>
+
       {yearSummary.length > 1 && (
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
@@ -686,6 +715,7 @@ function MultiPlantBlock({ plants }: { plants: Array<{ id: string; code: string;
           <SummaryTable summary={yearSummary} unit="MW" />
         </div>
       )}
+
     </section>
   );
 }
